@@ -676,12 +676,27 @@ final class TilingManager {
     }
 
     func context() -> Context? {
-        guard canTile, let id = AX.focusedWindow()?.id else { return nil }
+        guard canTile else { return nil }
         let displays = Display.current()
-        for display in displays {
-            if let tile = states[display.key]?.tileIndex(of: id) {
-                return Context(displays: displays, display: display, tile: tile, window: id)
+        func locate(_ id: CGWindowID) -> Context? {
+            for display in displays {
+                if let tile = states[display.key]?.tileIndex(of: id) {
+                    return Context(displays: displays, display: display, tile: tile, window: id)
+                }
             }
+            return nil
+        }
+        let focused = AX.focusedWindow()
+        if let id = focused?.id, let context = locate(id) { return context }
+        // Some apps (Electron ones like Discord especially) give focus to a hidden helper
+        // window Pane doesn't tile. Then the command means the front app's tiled window:
+        // the one last used if it belongs to that app, else its showing one.
+        let pid = focused?.pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard let pid else { return nil }
+        if let last = lastFocused, windows[last]?.pid == pid, let context = locate(last) { return context }
+        for display in displays {
+            guard let state = states[display.key] else { continue }
+            if let id = state.showingWindows.first(where: { windows[$0]?.pid == pid }) { return locate(id) }
         }
         return nil
     }
