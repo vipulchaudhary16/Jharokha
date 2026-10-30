@@ -47,6 +47,12 @@ final class TilingManager {
     var splitWeights: [String: SplitWeights] = [:]
     /// Called after every layout pass and focus change, for the window chrome and modes.
     var onLayoutChange: (() -> Void)?
+    /// Every window animation has finished.
+    var onAnimationsSettled: (() -> Void)?
+    /// While an edge is dragged: where every tile of that screen is now (AX coordinates).
+    var onLiveResize: (([CGWindowID: CGRect]) -> Void)?
+    /// The edge drag ended.
+    var onResizeEnd: (() -> Void)?
     /// Called when a drag or resize starts (true) and ends (false).
     var onDragChange: ((Bool) -> Void)?
     private var missingSince: [CGWindowID: Date] = [:]
@@ -79,7 +85,10 @@ final class TilingManager {
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
         observer.onChange = { [weak self] change in self?.handle(change) }
         // Pane's own animation moves windows constantly; check the layout once they settle.
-        animator.onIdle = { [weak self] in self?.scheduleRefresh(after: 0.05) }
+        animator.onIdle = { [weak self] in
+            self?.onAnimationsSettled?()
+            self?.scheduleRefresh(after: 0.05)
+        }
         observer.start()
         isPausedForStageManager = Self.isStageManagerOn
         accessUsable = AX.isUsable

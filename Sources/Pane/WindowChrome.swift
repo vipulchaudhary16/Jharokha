@@ -16,10 +16,30 @@ final class WindowChrome {
     private var mouseMonitors: [Any] = []
     private var hoverWork: DispatchWorkItem?
 
+    private let veil = ResizeVeil()
+
     init(tiler: TilingManager) {
         self.tiler = tiler
         // Borders ride along with windows while they glide into place.
         tiler.animator.onTick = { [weak self] frames in self?.follow(frames) }
+        // Windows that change size get a blurred veil while they do, hiding slow redraws.
+        tiler.animator.onStart = { [weak self] id, from, to in
+            guard let self, self.settings.veilsResizing, !from.size.isClose(to: to.size) else { return }
+            self.veil.show([id: from], icons: { self.tiler.appIcon(of: $0) })
+        }
+        tiler.onAnimationsSettled = { [weak self] in
+            guard let self, self.tiler.resizing == nil else { return }
+            self.veil.hide()
+        }
+        tiler.onLiveResize = { [weak self] frames in
+            guard let self, self.settings.veilsResizing else { return }
+            self.veil.show(frames, icons: { self.tiler.appIcon(of: $0) })
+        }
+        tiler.onResizeEnd = { [weak self] in
+            // If the drop starts a final animation, the veil goes when it settles.
+            guard let self, !self.tiler.animator.isRunning else { return }
+            self.veil.hide(after: 0.15)
+        }
     }
 
     private static let fade: TimeInterval = 0.18
@@ -43,6 +63,7 @@ final class WindowChrome {
     }
 
     private func follow(_ frames: [CGWindowID: CGRect]) {
+        veil.follow(frames)
         guard !hidden else { return }
         for (id, frame) in frames {
             guard let panel = borders[id], let view = panel.contentView as? BorderView else { continue }

@@ -53,6 +53,15 @@ extension TilingManager {
         apply([display], excluding: [current.id], animated: false)
         // Live passes don't keep the provisional weights; the drop computes the final ones.
         splitWeights = base
+
+        var frames: [CGWindowID: CGRect] = [:]
+        if let state = states[display.key], let rects = appliedRects[display.key] {
+            for (index, tile) in state.tiles.enumerated() where rects.indices.contains(index) {
+                frames[tile.showing] = rects[index]
+            }
+        }
+        frames[current.id] = frame
+        onLiveResize?(frames)
     }
 
     func finishResize(_ displays: [Display]) {
@@ -62,6 +71,7 @@ extension TilingManager {
                 resizeWeights(display: display, tile: tile, to: frame)
         }
         apply(displays)
+        onResizeEnd?()
     }
 
     /// ⌃⌥= and ⌃⌥-: move the active window's shared edges outward or inward by a small step.

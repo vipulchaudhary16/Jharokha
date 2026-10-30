@@ -99,6 +99,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "animatesWindows") }
     }
 
+    /// A soft blur with the app's icon over windows while they change size.
+    var veilsResizing: Bool {
+        get { defaults.object(forKey: "veilsResizing") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "veilsResizing") }
+    }
+
     /// Activate a tiled window when the pointer rests on it.
     var hoverFocus: Bool {
         get { defaults.object(forKey: "hoverFocus") as? Bool ?? false }

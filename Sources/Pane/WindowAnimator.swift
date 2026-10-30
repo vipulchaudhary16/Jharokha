@@ -24,6 +24,8 @@ final class WindowAnimator: NSObject {
     var onTick: (([CGWindowID: CGRect]) -> Void)?
     /// All animations finished.
     var onIdle: (() -> Void)?
+    /// An animation started, with its start and end frames.
+    var onStart: ((CGWindowID, CGRect, CGRect) -> Void)?
 
     var isRunning: Bool { !animations.isEmpty }
 
@@ -34,6 +36,7 @@ final class WindowAnimator: NSObject {
         let from = animations[window.id].map { frame(of: $0, at: now) } ?? window.frame ?? target
         disableEnhancedUI(window.pid)
         animations[window.id] = Animation(window: window, from: from, to: target, start: now, completion: completion)
+        onStart?(window.id, from, target)
         startLink()
     }
 

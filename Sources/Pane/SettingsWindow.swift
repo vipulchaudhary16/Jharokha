@@ -53,6 +53,7 @@ private struct GeneralSettings: View {
     @State private var color = Settings.shared.highlightColor
     @State private var quickActions = Settings.shared.showsQuickActions
     @State private var animate = Settings.shared.animatesWindows
+    @State private var veil = Settings.shared.veilsResizing
     @State private var hoverFocus = Settings.shared.hoverFocus
     @State private var dim = Settings.shared.noPeekDim
     @State private var blur = Settings.shared.noPeekBlur
@@ -73,6 +74,8 @@ private struct GeneralSettings: View {
             Section("Windows") {
                 Toggle("Animate windows into place", isOn: $animate)
                     .onChange(of: animate) { _, value in settings.animatesWindows = value; onChange() }
+                Toggle("Blur windows while they resize", isOn: $veil)
+                    .onChange(of: veil) { _, value in settings.veilsResizing = value; onChange() }
                 Toggle("Quick actions above the active window", isOn: $quickActions)
                     .onChange(of: quickActions) { _, value in settings.showsQuickActions = value; onChange() }
                 Toggle("Activate windows on hover", isOn: $hoverFocus)
