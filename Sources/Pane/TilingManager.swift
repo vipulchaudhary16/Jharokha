@@ -511,9 +511,12 @@ final class TilingManager {
     private func solve(_ display: Display, _ state: inout ScreenTiles) -> [CGRect] {
         let reducedFrom = state.tiles.count
         while true {
+            // A minimum learned on a bigger screen can't exceed this one: the window takes the
+            // full width or height here, rather than squeezing every other window into its stack.
             let minimums = state.tiles.map { tile in
                 tile.windows.map(minimumSize).reduce(CGSize.zero) {
-                    CGSize(width: max($0.width, $1.width), height: max($0.height, $1.height))
+                    CGSize(width: min(max($0.width, $1.width), display.rect.width),
+                           height: min(max($0.height, $1.height), display.rect.height))
                 }
             }
             if let rects = LayoutEngine.fit(kind: settings.layout(for: display), count: state.tiles.count,
@@ -608,6 +611,17 @@ final class TilingManager {
         let roomiest = Display.current().map(\.rect.size)
         guard roomiest.contains(where: { accepted.width <= $0.width && accepted.height <= $0.height }) else { return }
         var learned = settings.learnedMinimum(for: bundleID)
+        // Fitting a size below what was learned means the learned minimum was too big (an app
+        // that resized itself at the time, say): lower it, so it stops costing tiles.
+        var shrank = false
+        if accepted.width <= requested.width + 1, accepted.width < learned.width - 1 {
+            learned.width = accepted.width.rounded(.down)
+            shrank = true
+        }
+        if accepted.height <= requested.height + 1, accepted.height < learned.height - 1 {
+            learned.height = accepted.height.rounded(.down)
+            shrank = true
+        }
         var grew = false
         if accepted.width > requested.width + 1, accepted.width > learned.width {
             learned.width = accepted.width.rounded(.up)
@@ -617,7 +631,7 @@ final class TilingManager {
             learned.height = accepted.height.rounded(.up)
             grew = true
         }
-        guard grew else { return }
+        guard grew || shrank else { return }
         settings.setLearnedMinimum(learned, for: bundleID)
         minimumsChanged = true
         solvedCapacity.removeAll()

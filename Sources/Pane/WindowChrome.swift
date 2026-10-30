@@ -10,6 +10,8 @@ final class WindowChrome {
     private var borders: [CGWindowID: NSPanel] = [:]
     private var grip: (panel: NSPanel, view: GripView)?
     private var bar: (panel: NSPanel, view: ChipBarView)?
+    /// A soft blur over the tile while its chip bar is open, so the bar stands out.
+    private var backdrop: NSPanel?
     private var dots: [CGWindowID: (panel: NSPanel, view: StackDotsView)] = [:]
     private var hideBarWork: DispatchWorkItem?
     private var hidden = false
@@ -221,8 +223,39 @@ final class WindowChrome {
         let rect = Self.nsRect(tile.rect)
         let width = min(size.width, rect.width - 16)
         let frame = NSRect(x: rect.midX - width / 2, y: rect.maxY - size.height - 10, width: width, height: size.height)
+        showBackdrop(over: tile.rect)
         entry.panel.setFrame(frame, display: true)
         entry.panel.orderFrontRegardless()
+    }
+
+    private func showBackdrop(over tile: CGRect) {
+        let panel = backdrop ?? {
+            let panel = Self.overlayPanel(clickThrough: true)
+            panel.level = .floating
+            panel.contentView = BackdropView()
+            backdrop = panel
+            return panel
+        }()
+        panel.setFrame(Self.nsRect(tile), display: true)
+        let wasVisible = panel.isVisible && panel.alphaValue > 0.5
+        // Ordered before the bar, so the bar sits on top of it at the same level.
+        panel.orderFrontRegardless()
+        guard !wasVisible else { panel.alphaValue = 1; return }
+        panel.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.fade
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    private func hideBackdrop() {
+        guard let panel = backdrop, panel.isVisible else { return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Self.fade
+            panel.animator().alphaValue = 0
+        }, completionHandler: {
+            if panel.alphaValue < 0.01 { panel.orderOut(nil) }
+        })
     }
 
     private static func chipTitle(_ tiler: TilingManager, _ id: CGWindowID) -> String {
@@ -269,6 +302,7 @@ final class WindowChrome {
     private func hideBar() {
         hideBarWork?.cancel()
         bar?.panel.orderOut(nil)
+        hideBackdrop()
     }
 
     // MARK: - Stack dots on inactive tiles
@@ -355,6 +389,35 @@ final class WindowChrome {
 }
 
 // MARK: - Views
+
+/// The blur behind an open chip bar: frosted, slightly dimmed, with the window's rounded corners.
+final class BackdropView: NSView {
+    private let blur = NSVisualEffectView()
+    private let tint = NSView()
+
+    init() {
+        super.init(frame: .zero)
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = 12
+        blur.layer?.masksToBounds = true
+        addSubview(blur)
+        tint.wantsLayer = true
+        tint.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        tint.layer?.cornerRadius = 12
+        addSubview(tint)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        blur.frame = bounds
+        tint.frame = bounds
+    }
+}
 
 final class BorderView: NSView {
     var color: NSColor = .controlAccentColor { didSet { needsDisplay = true } }
