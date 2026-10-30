@@ -36,6 +36,39 @@ enum MenuIcons {
 
     /// An SF Symbol redrawn into a plain template image: this macOS drops symbol images
     /// from menu items, while drawn images (like the layout icons) show.
+    /// The menu bar glyph: the app icon's three panes (Side layout). Solid while tiling,
+    /// outlined when paused or waiting for access.
+    static func statusGlyph(paused: Bool) -> NSImage {
+        let image = NSImage(size: NSSize(width: 19, height: 15), flipped: true) { bounds in
+            let area = bounds.insetBy(dx: 1, dy: 1)
+            let gap: CGFloat = 1.6
+            let mainWidth = ((area.width - gap) * 0.56).rounded()
+            let main = CGRect(x: area.minX, y: area.minY, width: mainWidth, height: area.height)
+            let sideX = main.maxX + gap
+            let half = (area.height - gap) / 2
+            let panes = [
+                main,
+                CGRect(x: sideX, y: area.minY, width: area.maxX - sideX, height: half),
+                CGRect(x: sideX, y: area.minY + half + gap, width: area.maxX - sideX, height: half),
+            ]
+            NSColor.black.set()
+            for (index, pane) in panes.enumerated() {
+                // Small panes need tighter corners or they read as circles.
+                let radius: CGFloat = index == 0 ? 2.2 : 1.4
+                if paused {
+                    let path = NSBezierPath(roundedRect: pane.insetBy(dx: 0.6, dy: 0.6), xRadius: radius - 0.4, yRadius: radius - 0.4)
+                    path.lineWidth = 1.2
+                    path.stroke()
+                } else {
+                    NSBezierPath(roundedRect: pane, xRadius: radius, yRadius: radius).fill()
+                }
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
     static func symbol(_ name: String) -> NSImage? {
         guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .regular)) else { return nil }

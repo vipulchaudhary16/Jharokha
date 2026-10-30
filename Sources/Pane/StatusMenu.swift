@@ -36,10 +36,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     func updateIcon() {
         let paused = !settings.isTilingEnabled || tiler.isPausedForStageManager || !AX.isTrusted || !tiler.accessUsable
-        let image = NSImage(systemSymbolName: paused ? "rectangle.split.2x2" : "rectangle.split.2x2.fill",
-                            accessibilityDescription: "Pane")
-        image?.isTemplate = true
-        item.button?.image = image
+        item.button?.image = MenuIcons.statusGlyph(paused: paused)
+        item.button?.setAccessibilityLabel(paused ? "Pane, paused" : "Pane")
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
