@@ -343,18 +343,24 @@ final class TilingManager {
         return kept
     }
 
-    /// Mission Control, App Exposé and Launchpad are full-screen layers owned by the Dock.
+    /// Mission Control and App Exposé are drawn by the WindowManager process in windows above
+    /// the normal layer; otherwise WindowManager has nothing above it. (The Dock keeps a
+    /// permanent full-screen window named "Dock", so Dock windows only count when unnamed,
+    /// as older systems draw Mission Control and Launchpad that way.)
     static var isMissionControlActive: Bool {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         let screens = NSScreen.screens.map(\.frame.size)
         return info.contains { entry in
-            guard entry[kCGWindowOwnerName as String] as? String == "Dock",
-                  let layer = entry[kCGWindowLayer as String] as? Int, layer >= 18,
+            let owner = entry[kCGWindowOwnerName as String] as? String
+            let layer = entry[kCGWindowLayer as String] as? Int ?? 0
+            if owner == "WindowManager" { return layer > 0 && layer < 24 }
+            guard owner == "Dock", layer >= 18, (entry[kCGWindowName as String] as? String ?? "") != "Dock",
                   let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat] else { return false }
             let width = bounds["Width"] ?? 0, height = bounds["Height"] ?? 0
             return screens.contains { width >= $0.width * 0.9 && height >= $0.height * 0.9 }
         }
     }
+
 
     /// Tileable windows, plus each on-screen window's z-order (0 = frontmost).
     private func enumerateWindows() -> ([AXWindow], [CGWindowID: Int]) {
