@@ -28,7 +28,7 @@ extension TilingManager {
         var pinned = settings.pinnedBundleIDs
         if pin { pinned.insert(bundleID) } else { pinned.remove(bundleID) }
         settings.pinnedBundleIDs = pinned
-        Self.setAllDesktops(pin, for: bundleID)
+        setAllDesktops(pin, for: bundleID)
 
         if pin {
             // Out of the layout, then into a picture-in-picture corner of the screen you're on.
@@ -84,11 +84,20 @@ extension TilingManager {
     // MARK: - The Dock's All Desktops setting
 
     /// Writes the Dock's "All Desktops" assignment for an app and restarts the Dock to apply it.
-    private static func setAllDesktops(_ on: Bool, for bundleID: String) {
+    /// Unpinning restores the app's own Dock assignment (This Desktop, Desktop 2…), if it had one.
+    private func setAllDesktops(_ on: Bool, for bundleID: String) {
         let domain = "com.apple.spaces" as CFString
         let key = "app-bindings" as CFString
+        let id = bundleID.lowercased()
         var bindings = CFPreferencesCopyAppValue(key, domain) as? [String: String] ?? [:]
-        bindings[bundleID.lowercased()] = on ? "AllSpaces" : nil
+        var previous = settings.previousSpaceBindings
+        if on {
+            if let old = bindings[id], old != "AllSpaces" { previous[id] = old }
+            bindings[id] = "AllSpaces"
+        } else {
+            bindings[id] = previous.removeValue(forKey: id)
+        }
+        settings.previousSpaceBindings = previous
         CFPreferencesSetAppValue(key, bindings as CFDictionary, domain)
         CFPreferencesAppSynchronize(domain)
         // The Dock reads the assignments at launch; macOS starts it again straight away.

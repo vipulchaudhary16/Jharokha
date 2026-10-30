@@ -142,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modes.onChange = { [weak self] in self?.menu?.updateIcon() }
         SettingsWindowController.shared.onShortcutsChanged = { [weak self] in self?.registerShortcuts() }
         SettingsWindowController.shared.onLayoutSettingsChanged = { [weak self] in self?.tiler.relayout() }
-        SettingsWindowController.shared.onRearrange = { [weak self] in self?.tiler.retile() }
+        SettingsWindowController.shared.onRearrange = { [weak self] in self?.tiler.rearrange() }
         SettingsWindowController.shared.onForgetSizes = { [weak self] in self?.tiler.forgetLearnedSizes() }
         SettingsWindowController.shared.onSettingsChanged = { [weak self] in
             self?.chrome.update()

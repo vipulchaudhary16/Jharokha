@@ -27,9 +27,7 @@ extension TilingManager {
         let needs = state.tiles.map { tile in
             tile.windows.map(need).reduce(CGSize.zero) { CGSize(width: max($0.width, $1.width), height: max($0.height, $1.height)) }
         }
-        let minimums = state.tiles.map { tile in
-            tile.windows.map(minimumSize).reduce(CGSize.zero) { CGSize(width: max($0.width, $1.width), height: max($0.height, $1.height)) }
-        }
+        let minimums = state.tiles.map(tileMinimum)
         // Arrangements where every window fits come first, so smart placement never forces
         // Pane to tile fewer windows than it otherwise could.
         let order = LayoutEngine.assignBySize(tiles: rects, needs: needs) { order in

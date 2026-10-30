@@ -28,7 +28,12 @@ final class TilingManager {
     /// The tile rects last applied per display key, after minimum sizes were solved.
     var appliedRects: [String: [CGRect]] = [:]
     /// Repeated writes of the same frame to one window; see `place`.
-    private var writes: [CGWindowID: (target: CGRect, attempts: Int)] = [:]
+    private var writes: [CGWindowID: (target: CGRect, attempts: Int, since: Date)] = [:]
+    /// Displays (by key) whose windows overlap because their minimum sizes don't fit.
+    var crowded: Set<String> = []
+    /// The tiled window under the pointer when the current press started moving things.
+    private var grabbed: CGWindowID?
+    private var lastPrune = Date.distantPast
     private var minimumsChanged = false
     /// Per display key, the app whose size made Pane tile fewer windows (to notify once).
     private var limitedBy: [String: String] = [:]
@@ -131,12 +136,16 @@ final class TilingManager {
         case .created, .spaceChanged:
             scheduleRefresh(after: 0.05)
             // New windows often settle their role, size and position a moment after creation.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.refresh() }
+            pendingSettle?.cancel()
+            let settle = DispatchWorkItem { [weak self] in self?.refresh() }
+            pendingSettle = settle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: settle)
         case .movedOrResized:
             if animator.isRunning && !Self.isMouseDown { return }
             if Self.isMouseDown {
                 if !windowMovedDuringPress {
                     pressFrames = Dictionary(uniqueKeysWithValues: refusing.compactMap { id in windows[id]?.frame.map { (id, $0) } })
+                    grabbed = tiledWindow(at: NSEvent.axMouseLocation)
                 }
                 windowMovedDuringPress = true
                 beginDragWatch()
@@ -147,6 +156,8 @@ final class TilingManager {
             scheduleRefresh(after: 0.03)
         }
     }
+
+    private var pendingSettle: DispatchWorkItem?
 
     private func scheduleRefresh(after delay: TimeInterval) {
         pendingRefresh?.cancel()
@@ -170,11 +181,18 @@ final class TilingManager {
             self.dragTimer = nil
             self.dragOverlay.hide()
             let wasDragging = self.dragged != nil || self.resizing != nil
+            let movedByHand = self.windowMovedDuringPress
             self.handleDrop()
             self.dragged = nil
             self.resizing = nil
             self.windowMovedDuringPress = false
             self.pressFrames = [:]
+            self.grabbed = nil
+            // Moving things by hand is a fresh start for windows Pane had given up on.
+            if movedByHand {
+                self.writes.removeAll()
+                self.refusing.removeAll()
+            }
             if wasDragging { self.onDragChange?(false) }
             self.refresh()
         }
@@ -202,7 +220,8 @@ final class TilingManager {
     /// Moved by the user: same size as before the press, origin away from its tile. A window
     /// Pane is animating is moving on its own, never because of the user.
     private func isBeingDragged(_ id: CGWindowID) -> Bool {
-        guard animator.target(of: id) == nil, let frame = windows[id]?.frame, let target = targets[id],
+        guard animator.target(of: id) == nil, grabbed == nil || grabbed == id,
+              let frame = windows[id]?.frame, let target = targets[id],
               let size = baselineSize(of: id) else { return false }
         return frame.size.isClose(to: size) && !frame.origin.isClose(to: target.origin)
     }
@@ -338,7 +357,7 @@ final class TilingManager {
             seenCounter += 1
             firstSeen[id] = seenCounter
         }
-        floating.formIntersection(windows.keys)
+        pruneGoneWindows()
         let focused = AX.focusedWindow()?.id
 
         var groups: [String: [CGWindowID]] = [:]
@@ -414,6 +433,21 @@ final class TilingManager {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in self?.scheduleRefresh(after: 0) }
         }
         return kept
+    }
+
+    /// Forgets per-window state for windows that no longer exist on any desktop. Windows on
+    /// other desktops (or of hidden apps) keep theirs, so a floated window stays floating.
+    private func pruneGoneWindows() {
+        guard Date().timeIntervalSince(lastPrune) > 5 else { return }
+        lastPrune = Date()
+        let info = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let alive = Set(info.compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
+        floating.formIntersection(alive)
+        firstSeen = firstSeen.filter { alive.contains($0.key) }
+        bundleIDs = bundleIDs.filter { alive.contains($0.key) }
+        targets = targets.filter { alive.contains($0.key) }
+        writes = writes.filter { alive.contains($0.key) }
+        refusing.formIntersection(alive)
     }
 
     /// Mission Control and App Exposé are drawn by the WindowManager process in windows above
@@ -513,11 +547,10 @@ final class TilingManager {
         let kind = settings.layout(for: display)
         // A minimum learned on a bigger screen can't exceed this one: the window takes the
         // full width or height here, rather than squeezing every other window into its stack.
+        let area = display.rect.insetBy(dx: settings.gap, dy: settings.gap).size
         func minimum(of tile: Tile) -> CGSize {
-            tile.windows.map(minimumSize).reduce(CGSize.zero) {
-                CGSize(width: min(max($0.width, $1.width), display.rect.width),
-                       height: min(max($0.height, $1.height), display.rect.height))
-            }
+            let m = tileMinimum(tile)
+            return CGSize(width: min(m.width, area.width), height: min(m.height, area.height))
         }
         func fit(_ minimums: [CGSize]) -> [CGRect]? {
             LayoutEngine.fit(kind: kind, count: minimums.count, in: display.rect, mainRatio: settings.mainRatio,
@@ -538,14 +571,21 @@ final class TilingManager {
             let minimums = state.tiles.map(minimum)
             if let order = fittingOrder(minimums) {
                 if order != Array(state.tiles.indices) { state.arrange(order) }
-                if state.tiles.count < reducedFrom { notifyLimit(on: display, state: state) } else { limitedBy[display.key] = nil }
+                crowded.remove(display.key)
+                // Only a layout that fits without stacking anything clears the "needs room" note,
+                // so it isn't repeated every time stacks split and merge again.
+                if state.tiles.count < reducedFrom { notifyLimit(on: display, state: state) }
+                else if solvedCapacity[display.key] == nil { limitedBy[display.key] = nil }
                 return fit(order.map { minimums[$0] }) ?? frames(for: display, count: state.tiles.count)
             }
             // A single window larger than the screen: let the app clamp it.
             guard state.tiles.count > 1 else { return frames(for: display, count: 1) }
             // On a screen too small for every app's minimum, overlap a little rather than stack:
             // each window keeps a tile, grown to its minimum and kept on screen.
-            if settings.overlapsWhenCrowded { return overlapping(display, minimums: minimums) }
+            if settings.overlapsWhenCrowded {
+                crowded.insert(display.key)
+                return overlapping(display, minimums: minimums)
+            }
             // Stack the two tiles whose merge lets the rest fit, preferring the biggest windows
             // together (they're the ones that can't share the screen), so everything else keeps a tile.
             func area(_ size: CGSize) -> CGFloat { size.width * size.height }
@@ -578,6 +618,19 @@ final class TilingManager {
         }
     }
 
+    /// The largest minimum of a tile's windows: what the tile must be at least.
+    func tileMinimum(_ tile: Tile) -> CGSize {
+        tile.windows.map(minimumSize).reduce(CGSize.zero) {
+            CGSize(width: max($0.width, $1.width), height: max($0.height, $1.height))
+        }
+    }
+
+    /// Tile rects for finding neighbours and drop targets. On a crowded screen the windows
+    /// overlap, so the layout's own (non-overlapping) tiles stand in for them.
+    func lookupRects(for display: Display) -> [CGRect] {
+        crowded.contains(display.key) ? frames(for: display, count: states[display.key]?.tiles.count ?? 0) : rects(for: display)
+    }
+
     func minimumSize(_ id: CGWindowID) -> CGSize {
         bundleIDs[id].map(settings.learnedMinimum) ?? .zero
     }
@@ -604,13 +657,14 @@ final class TilingManager {
             refusing.remove(id)
             return
         }
-        var write = writes[id] ?? (rect, 0)
-        if !write.target.isClose(to: rect) { write = (rect, 0) }
+        var write = writes[id] ?? (rect, 0, Date())
+        if !write.target.isClose(to: rect) { write = (rect, 0, Date()) }
         write.attempts += 1
         writes[id] = write
         // An app that keeps refusing the same frame (some apply their minimum a moment later)
-        // would otherwise bounce forever: learn the size it insists on and stop writing.
-        guard write.attempts <= 3 else {
+        // would otherwise bounce forever: learn the size it insists on and stop writing. Quick
+        // refreshes right after a window appears don't count; refusals must span a moment.
+        guard write.attempts <= 3 || Date().timeIntervalSince(write.since) < 0.8 else {
             refusing.insert(id)
             log.debug("gave up on \(id) \(self.bundleIDs[id] ?? "?", privacy: .public) at \(NSStringFromRect(frame), privacy: .public) wanted \(NSStringFromRect(rect), privacy: .public)")
             learnMinimum(id, accepted: frame, requested: rect)
@@ -705,12 +759,12 @@ final class TilingManager {
                     state.remove(id, capacity: settings.capacity(for: display))
                     states[display.key] = state
                     var other = states[destination.key] ?? ScreenTiles()
-                    let rects = rects(for: destination)
+                    let rects = lookupRects(for: destination)
                     other.insert(id, capacity: settings.capacity(for: destination),
                                  activeTile: LayoutEngine.tile(at: mouse, in: rects))
                     states[destination.key] = other
                 } else if let from = state.tileIndex(of: id),
-                          let to = LayoutEngine.tile(at: mouse, in: rects(for: display)),
+                          let to = LayoutEngine.tile(at: mouse, in: lookupRects(for: display)),
                           from != to {
                     if addToStack {
                         state.move(id, toTile: to, capacity: settings.capacity(for: display))
@@ -772,7 +826,7 @@ final class TilingManager {
     /// Swaps with the neighbour in a direction; past the screen edge, moves to the next display.
     func swap(_ direction: Direction) {
         guard let c = context(), var state = states[c.display.key] else { return }
-        let rects = rects(for: c.display)
+        let rects = lookupRects(for: c.display)
         if let neighbor = LayoutEngine.neighbor(of: c.tile, in: rects, direction: direction) {
             state.swapShowing(c.tile, neighbor)
             states[c.display.key] = state
@@ -945,6 +999,12 @@ final class TilingManager {
             guard let frame = windows[id]?.frame else { return false }
             return !frame.isClose(to: target)
         }.count
+        // Sizes learned for apps on a crowded screen may be stale (an app that resized itself
+        // once, a window that has since shrunk): Re-apply measures them again.
+        let cramped = states.filter { key, _ in crowded.contains(key) || limitedBy[key] != nil }
+        let stale = Set(cramped.values.flatMap(\.allWindows).compactMap { bundleIDs[$0] })
+        stale.forEach(settings.forgetLearnedMinimum)
+        crowded.removeAll()
         // "Every window back in its place" includes leaving focus mode.
         focusMode.removeAll()
         writes.removeAll()
@@ -999,6 +1059,15 @@ final class TilingManager {
     /// Other Spaces pick the change up as soon as you switch to them.
     private func scope(_ display: Display) -> Display? {
         settings.appliesToAllScreens ? nil : display
+    }
+
+    /// Re-arranges windows by size after the placement settings changed, without the side
+    /// effects of Re-apply (turning tiling on, leaving focus mode).
+    func rearrange() {
+        arrangedMembers.removeAll()
+        crowded.removeAll()
+        relayout()
+        refresh()
     }
 
     /// Re-applies layout after a setting changed (layout, count, main size, spacing).

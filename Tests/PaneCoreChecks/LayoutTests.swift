@@ -195,4 +195,14 @@ struct LayoutTests {
         let order = LayoutEngine.assignBySize(tiles: tiles, needs: needs) { order in order[0] == 1 }
         expect(order == [1, 0])
     }
+
+    /// A minimum as tall as the gap-inset screen fits in Columns; one taller does not.
+    func clampedMinimumFitsWithGaps() {
+        let screen = CGRect(x: 0, y: 0, width: 1470, height: 862)
+        let full = CGSize(width: 0, height: 862 - 16)
+        expect(LayoutEngine.fit(kind: .columns, count: 2, in: screen, mainRatio: 0.5, gap: 8, shape: .standard,
+                                minimums: [full, .zero]) != nil)
+        expect(LayoutEngine.fit(kind: .columns, count: 2, in: screen, mainRatio: 0.5, gap: 8, shape: .standard,
+                                minimums: [CGSize(width: 0, height: 862), .zero]) == nil)
+    }
 }

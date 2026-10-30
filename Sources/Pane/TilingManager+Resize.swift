@@ -14,11 +14,7 @@ extension TilingManager {
 
     private func resizeWeights(display: Display, tile: Int, to frame: CGRect) -> SplitWeights {
         let count = states[display.key]?.tiles.count ?? 0
-        let minimums = states[display.key]?.tiles.map { tile in
-            tile.windows.map(minimumSize).reduce(CGSize.zero) {
-                CGSize(width: max($0.width, $1.width), height: max($0.height, $1.height))
-            }
-        } ?? []
+        let minimums = states[display.key]?.tiles.map(tileMinimum) ?? []
         return LayoutEngine.resize(tile: tile, to: frame, kind: settings.layout(for: display), count: count,
                                    in: display.rect, mainRatio: settings.mainRatio, gap: settings.gap,
                                    shape: display.shape, minimums: minimums,
@@ -31,7 +27,7 @@ extension TilingManager {
     func beginResizeIfNeeded(_ displays: [Display]) {
         let mouse = NSEvent.axMouseLocation
         for display in displays {
-            guard let state = states[display.key], focusMode[display.key] == nil else { continue }
+            guard let state = states[display.key], focusMode[display.key] == nil, !crowded.contains(display.key) else { continue }
             for id in state.showingWindows {
                 // Against the size before the press, so a refusing window dragged by its title bar
                 // (its size never matched the tile) isn't taken for a resize.
@@ -81,6 +77,11 @@ extension TilingManager {
     /// ⌃⌥= and ⌃⌥-: move the active window's shared edges outward or inward by a small step.
     func resizeActive(grow: Bool) {
         guard let c = context(), focusMode[c.display.key] == nil else { return }
+        guard !crowded.contains(c.display.key) else {
+            NSSound.beep()
+            Toast.show("Windows overlap on this screen, so sizes are fixed")
+            return
+        }
         let rects = rects(for: c.display)
         guard rects.indices.contains(c.tile) else { return }
         let old = rects[c.tile]

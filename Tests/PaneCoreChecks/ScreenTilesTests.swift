@@ -96,4 +96,24 @@ struct ScreenTilesTests {
         expect(s.tiles.count == 3)
         expect(s.tiles.contains { Set($0.windows) == [2, 4] })
     }
+
+    func mergeStacksTwoChosenTiles() {
+        var s = ScreenTiles()
+        s.reconcile(present: [1, 2, 3, 4], capacity: 4, activeTile: nil)
+        s.merge(0, 2)                            // [1,3] [2] [4]
+        expect(s.tiles.count == 3)
+        expect(Set(s.tiles[0].windows) == [1, 3])
+        expect(s.tiles[1].windows == [2] && s.tiles[2].windows == [4])
+    }
+
+    func arrangeMovesStacksWhole() {
+        var s = ScreenTiles()
+        s.reconcile(present: [1, 2, 3], capacity: 3, activeTile: nil)
+        s.merge(0, 1)                            // [1,2] [3]
+        s.arrange([1, 0])
+        expect(s.tiles[0].windows == [3])
+        expect(Set(s.tiles[1].windows) == [1, 2])
+        s.arrange([0, 0])                        // not a permutation: ignored
+        expect(s.tiles[0].windows == [3])
+    }
 }

@@ -58,7 +58,7 @@ extension TilingManager {
     func moveWindow(_ id: CGWindowID, toTileAt point: CGPoint) {
         let displays = Display.current()
         guard let destination = displays.containing(point),
-              let target = LayoutEngine.tile(at: point, in: rects(for: destination)) else { return }
+              let target = LayoutEngine.tile(at: point, in: lookupRects(for: destination)) else { return }
         if var state = states[destination.key], state.contains(id) {
             state.move(id, toTile: target, capacity: settings.capacity(for: destination))
             states[destination.key] = state

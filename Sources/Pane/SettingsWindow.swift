@@ -91,7 +91,7 @@ private struct GeneralSettings: View {
                 Text("Off: each desktop remembers its own layout, window count and sizes, even after a restart.")
                     .font(.callout).foregroundStyle(.secondary)
                 Toggle("Smart placement: windows that need more room get the bigger tiles", isOn: $smart)
-                    .onChange(of: smart) { _, value in settings.arrangesBySize = value; if value { controller.onRearrange?() } }
+                    .onChange(of: smart) { _, value in settings.arrangesBySize = value; controller.onRearrange?() }
                 Toggle("On small screens, overlap windows that can't shrink instead of stacking them", isOn: $overlap)
                     .onChange(of: overlap) { _, value in settings.overlapsWhenCrowded = value; controller.onRearrange?() }
                 LabeledContent("Learned window sizes") {

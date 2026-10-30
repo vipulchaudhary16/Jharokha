@@ -99,13 +99,13 @@ final class Settings {
         set { defaults.set(newValue, forKey: "showsQuickActions") }
     }
 
-    /// Give the biggest tiles to the windows that need the most room.
     /// When apps' minimum sizes don't fit a screen, overlap them slightly instead of stacking.
     var overlapsWhenCrowded: Bool {
         get { defaults.object(forKey: "overlapsWhenCrowded") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "overlapsWhenCrowded") }
     }
 
+    /// Give the biggest tiles to the windows that need the most room.
     var arrangesBySize: Bool {
         get { defaults.object(forKey: "arrangesBySize") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "arrangesBySize") }
@@ -162,19 +162,38 @@ final class Settings {
     func setLearnedMinimum(_ size: CGSize, for bundleID: String) {
         var all = learnedMinimums
         all[bundleID] = [Double(size.width), Double(size.height)]
-        defaults.set(all, forKey: "learnedMinimums")
+        learnedMinimums = all
     }
 
-    func forgetLearnedMinimums() {
-        defaults.removeObject(forKey: "learnedMinimums")
+    func forgetLearnedMinimum(for bundleID: String) {
+        var all = learnedMinimums
+        guard all.removeValue(forKey: bundleID) != nil else { return }
+        learnedMinimums = all
     }
 
+    func forgetLearnedMinimums() { learnedMinimums = [:] }
+
+    /// Dock desktop assignments apps had before Pane pinned them, by lowercased bundle ID.
+    var previousSpaceBindings: [String: String] {
+        get { defaults.dictionary(forKey: "previousSpaceBindings") as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: "previousSpaceBindings") }
+    }
+
+    /// Read on every layout pass (many times over while placing by size), so kept in memory.
+    private var cachedMinimums: [String: [Double]]?
     private var learnedMinimums: [String: [Double]] {
-        defaults.dictionary(forKey: "learnedMinimums") as? [String: [Double]] ?? [:]
+        get {
+            if let cachedMinimums { return cachedMinimums }
+            let stored = defaults.dictionary(forKey: "learnedMinimums") as? [String: [Double]] ?? [:]
+            cachedMinimums = stored
+            return stored
+        }
+        set {
+            cachedMinimums = newValue
+            defaults.set(newValue, forKey: "learnedMinimums")
+        }
     }
 
-    /// Layout and window-count changes go to every screen (the default), or only to the
-    /// screen they were made on. Either way they apply to every Space of that screen.
     /// One layout and count for every screen and desktop, instead of each desktop
     /// remembering its own (the default).
     var appliesToAllScreens: Bool {
