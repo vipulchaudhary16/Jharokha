@@ -20,6 +20,9 @@ final class TabViewSwitcher {
     private var selected = 0
     private var monitors: [Any] = []
     private var previous: AXWindow?
+    /// The modifiers held while the switcher is open (⌥ by default); releasing them switches.
+    /// A shortcut without ⌃ ⌥ or ⌘ to hold keeps it open until ↩, a click or ⎋.
+    private var hold: NSEvent.ModifierFlags = [.option]
 
     var isOpen: Bool { panel != nil }
 
@@ -32,10 +35,12 @@ final class TabViewSwitcher {
         items = Self.collect()
         guard !items.isEmpty else { return }
         previous = AX.focusedWindow()
+        hold = (ShortcutStore.shared.shortcut(for: .tabView)?.cocoaModifiers ?? [.option])
+            .intersection([.control, .option, .command])
         // Items are front to back, so the window used before this one comes second.
         selected = items.count > 1 ? (backward ? items.count - 1 : 1) : 0
-        // A quick ⌥⇥ already released: just switch back, like ⌘⇥.
-        guard NSEvent.modifierFlags.contains(.option) else {
+        // A quick press already released: just switch back, like ⌘⇥.
+        guard hold.isEmpty || NSEvent.modifierFlags.isSuperset(of: hold) else {
             choose()
             return
         }
@@ -104,7 +109,7 @@ final class TabViewSwitcher {
     private func handle(_ event: NSEvent) -> NSEvent? {
         switch event.type {
         case .flagsChanged:
-            if !event.modifierFlags.contains(.option) { choose() }
+            if !hold.isEmpty && !event.modifierFlags.isSuperset(of: hold) { choose() }
             return nil
         case .keyDown:
             switch event.keyCode {

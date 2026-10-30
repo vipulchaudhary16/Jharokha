@@ -276,8 +276,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private static func focusSubtitle(_ on: Bool, app: String?) -> String {
-        if on { return "On: switch off to put every window back · ⌃⌥Z" }
-        return "Fill the screen with \(app ?? "the active window") · ⌃⌥Z"
+        if on { return "On: switch off to put every window back\(ShortcutStore.shared.hint(.focusMode))" }
+        return "Fill the screen with \(app ?? "the active window")\(ShortcutStore.shared.hint(.focusMode))"
     }
 
     private static func summary(of kind: LayoutKind) -> String {
@@ -384,11 +384,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private static func noPeekSubtitle(_ on: Bool) -> String {
-        on ? "On: other windows are faded · ⌃⌥D" : "Fade every window except the active one · ⌃⌥D"
+        on ? "On: other windows are faded\(ShortcutStore.shared.hint(.noPeek))" : "Fade every window except the active one\(ShortcutStore.shared.hint(.noPeek))"
     }
 
     private static func cleanSpaceSubtitle(_ on: Bool) -> String {
-        on ? "On: switch off to bring everything back · ⌃⌥P" : "One window on a plain screen, for sharing · ⌃⌥P"
+        on ? "On: switch off to bring everything back\(ShortcutStore.shared.hint(.cleanSpace))" : "One window on a plain screen, for sharing\(ShortcutStore.shared.hint(.cleanSpace))"
     }
 
     @objc private func quit() { NSApp.terminate(nil) }

@@ -39,7 +39,9 @@ final class WindowAnimator: NSObject {
 
     /// Stops a window's animation where it is (e.g. the user grabbed it).
     func cancel(_ id: CGWindowID) {
-        animations[id] = nil
+        // Only a real cancellation can end the animation run; otherwise every instant write
+        // would report "idle" and trigger a refresh.
+        guard animations.removeValue(forKey: id) != nil else { return }
         if animations.isEmpty { finishAll() }
     }
 

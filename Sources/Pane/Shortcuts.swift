@@ -34,6 +34,15 @@ struct Shortcut: Equatable, Hashable {
         return mods
     }
 
+    var cocoaModifiers: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if modifiers & UInt32(controlKey) != 0 { flags.insert(.control) }
+        if modifiers & UInt32(optionKey) != 0 { flags.insert(.option) }
+        if modifiers & UInt32(shiftKey) != 0 { flags.insert(.shift) }
+        if modifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }
+        return flags
+    }
+
     var display: String {
         var text = ""
         if modifiers & UInt32(controlKey) != 0 { text += "⌃" }
@@ -179,6 +188,12 @@ final class ShortcutStore {
     }
 
     func display(for action: ShortcutAction) -> String { shortcut(for: action)?.display ?? "Off" }
+
+    /// " · ⌃⌥D to stop" for notices and subtitles, or nothing when the shortcut is off.
+    func hint(_ action: ShortcutAction, _ text: String? = nil) -> String {
+        guard areEnabled, let shortcut = shortcut(for: action) else { return "" }
+        return " · \(shortcut.display)" + (text.map { " \($0)" } ?? "")
+    }
 
     /// The other Pane action already using this combination, if any.
     func action(using shortcut: Shortcut, except: ShortcutAction) -> ShortcutAction? {

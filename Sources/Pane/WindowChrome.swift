@@ -36,7 +36,10 @@ final class WindowChrome {
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = Self.fade
             panel.animator().alphaValue = 0
-        }, completionHandler: { panel.orderOut(nil) })
+        }, completionHandler: {
+            // A fade-in may have started meanwhile; only a panel that stayed faded goes away.
+            if panel.alphaValue < 0.05 { panel.orderOut(nil) }
+        })
     }
 
     private func follow(_ frames: [CGWindowID: CGRect]) {
@@ -416,6 +419,16 @@ final class ChipBarView: NSView {
             case .close: return "Close"
             }
         }
+        /// Short enough to sit beside the icon.
+        var label: String {
+            switch self {
+            case .primary: return "Primary"
+            case .focus: return "Focus"
+            case .float: return "Float"
+            case .minimize: return "Minimize"
+            case .close: return "Close"
+            }
+        }
     }
 
     enum Mode {
@@ -488,13 +501,15 @@ final class ChipBarView: NSView {
             stack.addArrangedSubview(button(symbol: "chevron.right", help: "Next window") { [weak self] in self?.onCycle?(1) })
         case .actions(let id):
             for action in QuickAction.allCases {
-                stack.addArrangedSubview(button(symbol: action.symbol, help: action.help) { [weak self] in self?.onAction?(action, id) })
+                stack.addArrangedSubview(button(symbol: action.symbol, help: action.help, label: action.label) { [weak self] in
+                    self?.onAction?(action, id)
+                })
             }
         }
         layoutSubtreeIfNeeded()
     }
 
-    private func button(symbol: String, help: String, _ action: @escaping () -> Void) -> NSView {
+    private func button(symbol: String, help: String, label: String? = nil, _ action: @escaping () -> Void) -> NSView {
         let button = ClosureButton(action: action)
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: help)?
             .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
@@ -502,7 +517,14 @@ final class ChipBarView: NSView {
         button.bezelStyle = .regularSquare
         button.contentTintColor = .labelColor
         button.toolTip = help
-        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        if let label {
+            button.title = label
+            button.font = .systemFont(ofSize: 11, weight: .medium)
+            button.imagePosition = .imageLeading
+            button.imageHugsTitle = true
+        } else {
+            button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        }
         button.heightAnchor.constraint(equalToConstant: 26).isActive = true
         return button
     }

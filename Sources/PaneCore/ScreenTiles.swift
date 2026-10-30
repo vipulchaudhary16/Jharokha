@@ -100,6 +100,7 @@ public struct ScreenTiles: Equatable, Sendable {
         guard let i = tileIndex(of: id) else { return }
         pinned.remove(id)
         if !tiles[i].remove(id) { tiles.remove(at: i) }
+        prunePins()
         normalize(capacity: capacity)
     }
 
@@ -123,9 +124,21 @@ public struct ScreenTiles: Equatable, Sendable {
             let last = tiles.removeLast()
             tiles[tiles.count - 1].absorb(last)
         }
-        while tiles.count < capacity,
-              let source = tiles.lastIndex(where: { $0.waiting(excluding: pinned) != nil }),
-              let id = tiles[source].waiting(excluding: pinned) {
+        while tiles.count < capacity {
+            // A stack made on purpose that got merged with other windows moves out together.
+            if let source = tiles.firstIndex(where: { tile in
+                let group = tile.windows.filter(pinned.contains)
+                return !group.isEmpty && group.count < tile.windows.count
+            }) {
+                let group = tiles[source].windows.filter(pinned.contains)
+                group.forEach { _ = tiles[source].remove($0) }
+                var stack = Tile(group[0])
+                group.dropFirst().forEach { stack.push($0) }
+                tiles.append(stack)
+                continue
+            }
+            guard let source = tiles.lastIndex(where: { $0.waiting(excluding: pinned) != nil }),
+                  let id = tiles[source].waiting(excluding: pinned) else { break }
             _ = tiles[source].remove(id)
             tiles.append(Tile(id))
         }
@@ -138,6 +151,15 @@ public struct ScreenTiles: Equatable, Sendable {
         let idB = tiles[b].showing
         tiles[a].replaceShowing(with: idB)
         tiles[b].replaceShowing(with: idA)
+        // Both left the stack they were pinned in.
+        pinned.remove(idA)
+        pinned.remove(idB)
+        prunePins()
+    }
+
+    /// A window is only pinned while it shares a tile with others.
+    private mutating func prunePins() {
+        pinned = pinned.filter { id in tileIndex(of: id).map { tiles[$0].isStacked } ?? false }
     }
 
     /// Marks a window as the showing one in its tile (e.g. after ⌘-Tab brought it forward).
@@ -153,11 +175,13 @@ public struct ScreenTiles: Equatable, Sendable {
         guard let from = tileIndex(of: id), tiles.indices.contains(target), from != target else { return }
         // Indices shift if the old tile empties; remember the target by its showing window.
         let anchor = tiles[target].showing
+        pinned.remove(id)
         if !tiles[from].remove(id) { tiles.remove(at: from) }
         guard let destination = tileIndex(of: anchor) else { return }
         tiles[destination].push(id)
         // The whole stack was made on purpose, so none of it splits off when there's room.
         pinned.formUnion(tiles[destination].windows)
+        prunePins()
         normalize(capacity: capacity)
     }
 

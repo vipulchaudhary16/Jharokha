@@ -83,4 +83,17 @@ struct ScreenTilesTests {
         expect(s.tiles[1].windows == [2, 1])
         expect(s.tiles[0].showing == 3)
     }
+
+    func pinsFollowTheStackNotTheWindow() {
+        var s = ScreenTiles()
+        s.reconcile(present: [1, 2, 3, 4], capacity: 4, activeTile: nil)
+        s.move(2, toTile: 0, capacity: 4)        // [1,2] [3] [4]
+        s.move(2, toTile: 2, capacity: 4)        // 2 joins 4; 1 is alone again
+        expect(!s.pinned.contains(1))
+        s.normalize(capacity: 1)
+        s.normalize(capacity: 3)
+        // 2 and 4 were stacked on purpose; 1 and 3 get their own tiles back.
+        expect(s.tiles.count == 3)
+        expect(s.tiles.contains { Set($0.windows) == [2, 4] })
+    }
 }

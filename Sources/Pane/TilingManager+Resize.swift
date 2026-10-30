@@ -30,7 +30,10 @@ extension TilingManager {
         for display in displays {
             guard let state = states[display.key], focusMode[display.key] == nil else { continue }
             for id in state.showingWindows {
-                guard let frame = windows[id]?.frame, let target = targets[id], !frame.size.isClose(to: target.size),
+                // Against the size before the press, so a refusing window dragged by its title bar
+                // (its size never matched the tile) isn't taken for a resize.
+                guard animator.target(of: id) == nil, let frame = windows[id]?.frame, let target = targets[id],
+                      let size = baselineSize(of: id), !frame.size.isClose(to: size),
                       frame.insetBy(dx: -16, dy: -16).contains(mouse), !frame.insetBy(dx: 16, dy: 16).contains(mouse) else { continue }
                 resizing = (id, display.key, target)
                 return
@@ -93,6 +96,7 @@ extension TilingManager {
         guard let display = display ?? targetDisplay() else { return }
         let hadCustom = hasCustomSizes(on: display)
         splitWeights = splitWeights.filter { !$0.key.hasPrefix(display.key + "|") }
+        guard canTile else { return }
         apply(Display.current())
         Toast.show(hadCustom ? "Window sizes reset" : "Windows are at their starting sizes")
         onStateChange?()

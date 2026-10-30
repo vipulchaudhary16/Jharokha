@@ -80,7 +80,9 @@ extension TilingManager {
     /// The tiled window under a point, if it is the frontmost window there.
     func tiledWindow(at point: CGPoint) -> CGWindowID? {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        for entry in info where entry[kCGWindowLayer as String] as? Int == 0 {
+        // Pane's own borders and No peek / Clean Space layers sit at the normal level too; skip them.
+        for entry in info where entry[kCGWindowLayer as String] as? Int == 0
+            && entry[kCGWindowOwnerPID as String] as? pid_t != getpid() {
             guard let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat],
                   CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
                     .contains(point) else { continue }
@@ -94,6 +96,8 @@ extension TilingManager {
 extension TilingManager {
     /// Turns focus mode on or off for a specific window (used by Clean Space).
     func setFocusMode(_ on: Bool, window id: CGWindowID) {
+        // While tiling is off or paused, the recorded tiles are stale; leave windows alone.
+        guard canTile else { return }
         let displays = Display.current()
         guard let display = displays.first(where: { states[$0.key]?.contains(id) ?? false }) else { return }
         if on {

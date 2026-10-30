@@ -50,6 +50,13 @@ final class TilingManager {
     /// Called when a drag or resize starts (true) and ends (false).
     var onDragChange: ((Bool) -> Void)?
     private var missingSince: [CGWindowID: Date] = [:]
+    /// Windows that keep refusing their tile's frame (an app minimum Pane hasn't fitted yet).
+    var refusing: Set<CGWindowID> = []
+    /// Frames of refusing windows when the current mouse press started moving things; for them
+    /// a drag or resize is judged against this, not against a target they never reached.
+    var pressFrames: [CGWindowID: CGRect] = [:]
+    /// Nesting depth of `apply`, so a minimum learned mid-pass doesn't start a second pass.
+    private var applyDepth = 0
     let animator = WindowAnimator()
     private var healthTimer: Timer?
     /// Whether macOS currently accepts Pane's Accessibility calls.
@@ -95,6 +102,9 @@ final class TilingManager {
         case .movedOrResized:
             if animator.isRunning && !Self.isMouseDown { return }
             if Self.isMouseDown {
+                if !windowMovedDuringPress {
+                    pressFrames = Dictionary(uniqueKeysWithValues: refusing.compactMap { id in windows[id]?.frame.map { (id, $0) } })
+                }
                 windowMovedDuringPress = true
                 beginDragWatch()
             } else {
@@ -131,6 +141,7 @@ final class TilingManager {
             self.dragged = nil
             self.resizing = nil
             self.windowMovedDuringPress = false
+            self.pressFrames = [:]
             if wasDragging { self.onDragChange?(false) }
             self.refresh()
         }
@@ -141,13 +152,26 @@ final class TilingManager {
     private func findDraggedWindow(_ displays: [Display]) -> (id: CGWindowID, displayKey: String)? {
         for display in displays {
             guard let state = states[display.key] else { continue }
-            for id in state.showingWindows {
-                guard let frame = windows[id]?.frame, let target = targets[id],
-                      frame.size.isClose(to: target.size), !frame.origin.isClose(to: target.origin) else { continue }
+            for id in state.showingWindows where isBeingDragged(id) {
                 return (id, display.key)
             }
         }
         return nil
+    }
+
+    /// The size a window had before this press: its tile's, or for a window that refuses its
+    /// tile, the size it had when the press started.
+    func baselineSize(of id: CGWindowID) -> CGSize? {
+        if refusing.contains(id) { return pressFrames[id]?.size }
+        return targets[id]?.size
+    }
+
+    /// Moved by the user: same size as before the press, origin away from its tile. A window
+    /// Pane is animating is moving on its own, never because of the user.
+    private func isBeingDragged(_ id: CGWindowID) -> Bool {
+        guard animator.target(of: id) == nil, let frame = windows[id]?.frame, let target = targets[id],
+              let size = baselineSize(of: id) else { return false }
+        return frame.size.isClose(to: size) && !frame.origin.isClose(to: target.origin)
     }
 
     /// Outlines every tile and previews the drop: on another tile of the same screen the two
@@ -400,7 +424,11 @@ final class TilingManager {
     /// so the move/resize events caused by these writes settle after one pass.
     /// A pass that learns a new minimum size is followed by another, which makes room for it.
     func apply(_ displays: [Display], excluding excluded: Set<CGWindowID> = [], animated: Bool = true) {
-        defer { onLayoutChange?() }
+        applyDepth += 1
+        defer {
+            applyDepth -= 1
+            onLayoutChange?()
+        }
         let animated = animated && settings.animatesWindows
         for _ in 0..<3 {
             minimumsChanged = false
@@ -474,6 +502,7 @@ final class TilingManager {
         if let flying = animator.target(of: id), flying.isClose(to: rect) { return }
         guard let frame = window.frame, !frame.isClose(to: rect) else {
             writes[id] = nil
+            refusing.remove(id)
             return
         }
         var write = writes[id] ?? (rect, 0)
@@ -483,6 +512,7 @@ final class TilingManager {
         // An app that keeps refusing the same frame (some apply their minimum a moment later)
         // would otherwise bounce forever: learn the size it insists on and stop writing.
         guard write.attempts <= 3 else {
+            refusing.insert(id)
             log.debug("gave up on \(id) \(self.bundleIDs[id] ?? "?", privacy: .public) at \(NSStringFromRect(frame), privacy: .public) wanted \(NSStringFromRect(rect), privacy: .public)")
             learnMinimum(id, accepted: frame, requested: rect)
             return
@@ -505,8 +535,9 @@ final class TilingManager {
         guard let accepted = windows[id]?.frame, !accepted.size.isClose(to: before.size) else { return }
         let wasChanged = minimumsChanged
         learnMinimum(id, accepted: accepted, requested: requested)
-        // Learned after an animation finished, outside an apply pass: make room now.
-        if minimumsChanged && !wasChanged && animator.isRunning == false {
+        // Learned after an animation finished, outside an apply pass: make room now. Inside a
+        // pass, the pass itself re-runs with the caller's exclusions and animation choice.
+        if minimumsChanged && !wasChanged && applyDepth == 0 && !animator.isRunning {
             minimumsChanged = false
             apply(Display.current())
         }
@@ -552,9 +583,7 @@ final class TilingManager {
         let addToStack = NSEvent.modifierFlags.isSuperset(of: [.option, .command])
         for display in displays {
             guard var state = states[display.key] else { continue }
-            for id in state.showingWindows {
-                guard let frame = windows[id]?.frame, let target = targets[id],
-                      frame.size.isClose(to: target.size), !frame.origin.isClose(to: target.origin) else { continue }
+            for id in state.showingWindows where isBeingDragged(id) {
                 if let destination = displays.containing(mouse), destination.key != display.key {
                     state.remove(id, capacity: settings.capacity(for: display))
                     states[display.key] = state
@@ -708,7 +737,7 @@ final class TilingManager {
         focusMode[display.key] = id
         apply(displays)
         windows[id]?.focus()
-        Toast.show("Focus mode · ⌃⌥Z to put windows back")
+        Toast.show("Focus mode\(ShortcutStore.shared.hint(.focusMode, "to put windows back"))")
     }
 
     /// Makes a tiled window the active one, bringing it forward in its stack.

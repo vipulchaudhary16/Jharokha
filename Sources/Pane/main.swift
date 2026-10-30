@@ -17,7 +17,7 @@ final class ModeController {
 
     func toggleNoPeek() {
         noPeek.setOn(!noPeek.isOn, below: AX.focusedWindow()?.id)
-        Toast.show(noPeek.isOn ? "No peek · ⌃⌥D to stop" : "No peek off")
+        Toast.show(noPeek.isOn ? "No peek\(ShortcutStore.shared.hint(.noPeek, "to stop"))" : "No peek off")
         onChange?()
     }
 
@@ -40,7 +40,7 @@ final class ModeController {
         cleanWindow = window?.id
         if let id = window?.id { tiler.setFocusMode(true, window: id) }
         cleanSpace.start(on: screen, below: window?.id)
-        Toast.show("Clean Space · ⌃⌥P to bring everything back")
+        Toast.show("Clean Space\(ShortcutStore.shared.hint(.cleanSpace, "to bring everything back"))")
         onChange?()
     }
 

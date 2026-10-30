@@ -204,6 +204,8 @@ private struct ShortcutRecorder: NSViewRepresentable {
 }
 
 final class RecorderButton: NSButton {
+    /// Only one field records at a time.
+    private static weak var active: RecorderButton?
     var onRecord: ((Shortcut?) -> Void)?
     var idleTitle = "" { didSet { if !isRecording { title = idleTitle } } }
     private var isRecording = false
@@ -223,6 +225,8 @@ final class RecorderButton: NSButton {
     }
 
     private func start() {
+        RecorderButton.active?.stop()
+        RecorderButton.active = self
         isRecording = true
         title = "Press keys…"
         HotKeys.shared.unregisterAll()
@@ -240,7 +244,27 @@ final class RecorderButton: NSButton {
         }
     }
 
+    /// Leaving the field any way at all (closing the window, switching tabs, the row being
+    /// rebuilt) ends recording, so Pane's shortcuts are always registered again.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, isRecording { stop() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowResigned), name: NSWindow.didResignKeyNotification,
+                                                   object: window)
+        }
+    }
+
+    @objc private func windowResigned() { if isRecording { stop() } }
+
     private func stop() {
+        guard isRecording || monitor != nil else { return }
+        if RecorderButton.active === self { RecorderButton.active = nil }
         isRecording = false
         title = idleTitle
         if let monitor { NSEvent.removeMonitor(monitor) }

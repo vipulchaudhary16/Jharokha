@@ -158,4 +158,14 @@ struct LayoutTests {
         let f = resize(.columns, 2, tile: 0, to: grow)
         expect(f[1].width == LayoutEngine.minimumTileLength)
     }
+
+    func growingBothEdgesOfAMiddleColumn() {
+        var frame = frames(.columns, 3)[1] // x 500..750
+        frame.origin.x -= 50
+        frame.size.width += 100
+        let f = resize(.columns, 3, tile: 1, to: frame)
+        expect(f[1].minX == 450 && f[1].width == 350)
+        expect(f[0].width == 450)
+        expect(f[2].minX == 800 && f[2].width == 200)
+    }
 }

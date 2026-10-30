@@ -139,6 +139,8 @@ public enum LayoutEngine {
             (.x, false, frame.minX - old.minX), (.x, true, frame.maxX - old.maxX),
             (.y, false, frame.minY - old.minY), (.y, true, frame.maxY - old.maxY),
         ]
+        // Edges on the same split (e.g. both sides of a middle column) accumulate.
+        var working: [String: [CGFloat]] = [:]
         for (axis, far, delta) in moves where abs(delta) > tolerance {
             // The deepest split on this axis whose boundary is this edge of the tile.
             guard let split = splits.last(where: { split in
@@ -150,7 +152,7 @@ public enum LayoutEngine {
                 return k > 0 && abs((axis == .x ? child.minX : child.minY) - (axis == .x ? old.minX : old.minY)) <= tolerance
             }), let k = split.children.firstIndex(where: { $0.leaves.contains(index) }) else { continue }
 
-            var sizes = split.children.map { axis == .x ? $0.rect.width : $0.rect.height }
+            var sizes = working[split.path] ?? split.children.map { axis == .x ? $0.rect.width : $0.rect.height }
             let floors = split.children.map { child -> CGFloat in
                 let m = minimumSize(of: child.node, mins, gap: gap)
                 return max(axis == .x ? m.width : m.height, minimumTileLength)
@@ -162,6 +164,7 @@ public enum LayoutEngine {
             change = max(change, floors[k] - sizes[k])
             sizes[k] += change
             sizes[neighbor] -= change
+            working[split.path] = sizes
             let total = sizes.reduce(0, +)
             result[split.path] = sizes.map { Double($0 / total) }
         }
