@@ -22,7 +22,17 @@ struct Shortcut: Equatable, Hashable {
         let mods = Self.carbonModifiers(event.modifierFlags)
         // A shortcut needs ⌃, ⌥ or ⌘ so it can't swallow ordinary typing.
         guard mods & UInt32(controlKey | optionKey | cmdKey) != 0 else { return nil }
+        // ⌥ (or ⇧⌥) with a character key types accents and symbols (⌥E, ⌥2); taking it would break typing.
+        let typing = mods & UInt32(controlKey | cmdKey) == 0
+        if typing && !Self.isNonCharacterKey(UInt32(event.keyCode)) { return nil }
         self.init(keyCode: UInt32(event.keyCode), modifiers: mods)
+    }
+
+    /// Keys that never type a character: arrows, Tab, Return, Escape, Delete, Space, F-keys.
+    static func isNonCharacterKey(_ keyCode: UInt32) -> Bool {
+        let named: Set<UInt32> = [36, 48, 49, 51, 53, 76, 115, 116, 117, 119, 121, 123, 124, 125, 126]
+        let functionKeys: Set<UInt32> = [96, 97, 98, 99, 100, 101, 103, 105, 107, 109, 111, 113, 118, 120, 122]
+        return named.contains(keyCode) || functionKeys.contains(keyCode)
     }
 
     static func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
@@ -119,10 +129,10 @@ enum ShortcutAction: String, CaseIterable {
         case .float: return "Float the active window, or tile it again"
         case .alwaysFloat: return "Always float windows like the active one"
         case .pinApp: return "Pin the active app to every desktop"
-        case .focusMode: return "Focus mode"
-        case .noPeek: return "No peek: fade every other window"
+        case .focusMode: return "Focus Mode"
+        case .noPeek: return "No Peek: fade every other window"
         case .cleanSpace: return "Privacy Mode: share one window, the rest as app cards"
-        case .retile: return "Re-apply tiling"
+        case .retile: return "Re-apply Tiling"
         case .tile1: return "Tile 1 window on this screen"
         case .tile2: return "Tile up to 2 windows"
         case .tile3: return "Tile up to 3 windows"
@@ -146,8 +156,9 @@ enum ShortcutAction: String, CaseIterable {
         case .previousInTile: return Shortcut(50, p | shift)
         case .stackDown: return Shortcut(125, p | cmd)
         case .stackUp: return Shortcut(126, p | cmd)
-        case .tabView: return Shortcut(48, UInt32(optionKey))
-        case .tabViewBackward: return Shortcut(48, UInt32(optionKey) | shift)
+        // ⌥⇥ alone is left to apps (and to switchers like AltTab).
+        case .tabView: return Shortcut(48)
+        case .tabViewBackward: return Shortcut(48, p | shift)
         case .grow: return Shortcut(24)
         case .shrink: return Shortcut(27)
         case .resetSizes: return Shortcut(29)

@@ -44,7 +44,7 @@ below is *documented* behaviour, not observed implementation.
 - **Focus** (⌃⌥Z): the active window fills the screen, and pressing again restores everything.
 - **No peek** (⌃⌥D): dims and blurs every window except the active app's window, its sheets and menus, the menu bar, and the Dock. Dim ranges from 10–90% (default 50%) with an optional blur. Works on all screens.
 - **Clean Space** (⌃⌥P): the active window is shown on a plain background (Graphite, Mist, or Stone), and everything else goes behind it. Nothing is moved or closed. New windows opened on that screen join it. Turns off on sleep, lock, or screen disconnect, and the menu bar icon shows a mark while it's on.
-- **Tab View** (⌥⇥ / ⌥⇧⇥): a window switcher laid out per screen like the real desktop. Each tile shows the app icon, app name, and window title, with minimized windows in a row below. The previous window is preselected, arrow keys move spatially across screens, and you release ⌥, press Return, or click to switch. Esc cancels. Titles are read only while it's open.
+- **Tab View** (⌃⌥⇥ / ⌃⌥⇧⇥): a window switcher laid out per screen like the real desktop. Each tile shows the app icon, app name, and window title, with minimized windows in a row below. The previous window is preselected, arrow keys move spatially across screens, and you release the keys, press Return, or click to switch. Esc cancels. Titles are read only while it's open.
 - **Retile** (⌃⌥R): restores every window's position, and a toast says whether anything had moved.
 - **Float toggle** (⌃⌥F) and "always float this kind" (⌃⌥⇧F).
 

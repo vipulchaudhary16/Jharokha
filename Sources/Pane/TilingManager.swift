@@ -513,7 +513,8 @@ final class TilingManager {
             }
             onLayoutChange?()
         }
-        let animated = animated && settings.animatesWindows
+        // Reduce Motion (Accessibility settings) turns window glides off too.
+        let animated = animated && settings.animatesWindows && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         for _ in 0..<3 {
             minimumsChanged = false
             displays.forEach { applyOnce($0, excluding: excluded, animated: animated) }
@@ -898,7 +899,7 @@ final class TilingManager {
         if let zoomed = focusMode.removeValue(forKey: display.key) {
             apply(displays)
             windows[zoomed]?.focus()
-            Toast.show("Focus mode off")
+            Toast.show("Focus Mode off")
         } else {
             guard let c = context() else { return }
             enterFocusMode(c.window, on: c.display, displays)
@@ -917,7 +918,7 @@ final class TilingManager {
             focusMode[display.key] = nil
             apply(displays)
             windows[id]?.focus()
-            Toast.show("Focus mode off")
+            Toast.show("Focus Mode off")
         } else {
             enterFocusMode(id, on: display, displays)
         }
@@ -929,7 +930,7 @@ final class TilingManager {
         focusMode[display.key] = id
         apply(displays)
         windows[id]?.focus()
-        Toast.show("Focus mode\(ShortcutStore.shared.hint(.focusMode, "to put windows back"))")
+        Toast.show("Focus Mode\(ShortcutStore.shared.hint(.focusMode, "to put windows back"))")
     }
 
     /// Makes a tiled window the active one, bringing it forward in its stack.
@@ -985,11 +986,12 @@ final class TilingManager {
         guard AX.isUsable else {
             log.error("Retile: Accessibility access is not usable (\(String(describing: AX.probe()), privacy: .public))")
             AX.requestTrust()
-            Toast.show("Turn Pane off and on in Settings › Privacy & Security › Accessibility")
+            Toast.show("Turn Pane off and on in System Settings › Privacy & Security › Accessibility")
             onStateChange?()
             return
         }
-        if !settings.isTilingEnabled { settings.isTilingEnabled = true }
+        let wasOff = !settings.isTilingEnabled
+        if wasOff { settings.isTilingEnabled = true }
         if isRunning { observer.reattach() } else { start() }
         guard !isPausedForStageManager else {
             Toast.show("Paused while Stage Manager is on")
@@ -1014,14 +1016,15 @@ final class TilingManager {
         refresh()
         let tiled = tiledWindowCount
         log.info("Retile: \(tiled) windows tiled, \(moved) had moved")
-        var message = tiled == 0 ? "No windows to tile on this Space"
+        var message = tiled == 0 ? "No windows to tile on this desktop"
             : moved == 0 ? "Tiling \(tiled) window\(tiled == 1 ? "" : "s")"
             : "Put \(moved) window\(moved == 1 ? "" : "s") back"
         // Say which visible apps are left out, so an excluded app isn't mistaken for a bug.
         let skipped = excludedAppsWithWindows()
         if !skipped.isEmpty {
-            message += " · \(skipped.joined(separator: ", ")) \(skipped.count == 1 ? "is" : "are") excluded"
+            message += " · \(skipped.joined(separator: ", ")) \(skipped.count == 1 ? "isn't" : "aren't") tiled"
         }
+        if wasOff { message = "Automatic Tiling is on · " + message }
         Toast.show(message)
     }
 
@@ -1087,13 +1090,14 @@ final class TilingManager {
         onStateChange?()
     }
 
-    func setTiling(_ enabled: Bool, forBundleID bundleID: String) {
+    func setTiling(_ enabled: Bool, forBundleID bundleID: String, announce: Bool = true) {
         var excluded = settings.excludedBundleIDs
         if enabled { excluded.remove(bundleID) } else { excluded.insert(bundleID) }
         settings.excludedBundleIDs = excluded
         refresh()
         let name = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.localizedName ?? bundleID
-        Toast.show(enabled ? "\(name) is tiled again" : "\(name) won't be tiled · choose again to include it")
+        guard announce else { return }
+        Toast.show(enabled ? "\(name) is tiled again" : "\(name) isn't tiled now · Include \(name) in Tiling brings it back")
     }
 }
 

@@ -26,7 +26,7 @@ This needs only the Command Line Tools, not Xcode. Builds are signed with the "P
 | ] / [ | Activate the next / previous window |
 | ` / ⇧` | Next / previous window in this tile's stack |
 | ⌘↓ / ⌘↑ | Scroll down / up through this tile's stack |
-| ⌥⇥ / ⌥⇧⇥ (no ⌃) | Tab View: every window, screen by screen |
+| ⌃⌥⇥ / ⌃⌥⇧⇥ | Tab View: every window, screen by screen |
 | = / − / 0 | Grow / shrink the active window, reset sizes |
 | F / ⇧F | Float the active window / always float its app |
 | ⌘P | Pin the active app to every desktop (floats and follows you between screens) |

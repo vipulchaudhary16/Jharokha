@@ -53,7 +53,7 @@ final class LayoutPickerRow: NSView {
 
     static func summary(_ kind: LayoutKind) -> String {
         switch kind {
-        case .grid: return "each new window takes half the newest space"
+        case .grid: return "each window you open splits the last tile"
         case .columns: return "side by side, full height"
         case .rows: return "stacked, full width"
         case .side: return "one large window, the rest in a column"
@@ -134,7 +134,7 @@ final class CountPickerRow: NSView {
         self.maximum = maximum
         super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 34))
         autoresizingMask = [.width]
-        toolTip = "More windows than this stack in the active tile"
+        toolTip = "How many tiles this screen has; more windows than that stack up"
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }

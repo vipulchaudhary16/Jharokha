@@ -1,7 +1,7 @@
 import AppKit
 
-/// Tab View (⌥⇥): every window, laid out screen by screen as it sits on the desktop.
-/// Hold ⌥ and press ⇥ / ⇧⇥ to move, arrows move spatially, release ⌥ (or press ↩, or click)
+/// Tab View (⌃⌥⇥): every window, laid out screen by screen as it sits on the desktop.
+/// Hold ⌃⌥ and press ⇥ / ⇧⇥ to move, arrows move spatially, release them (or press ↩, or click)
 /// to switch, ⎋ to cancel. Window titles are read only while it is open, to label the tiles.
 final class TabViewSwitcher {
     struct Item {
@@ -26,7 +26,7 @@ final class TabViewSwitcher {
 
     var isOpen: Bool { panel != nil }
 
-    /// ⌥⇥: opens with the previous window selected, or moves the selection while open.
+    /// ⌃⌥⇥: opens with the previous window selected, or moves the selection while open.
     func advance(backward: Bool) {
         if isOpen {
             move(by: backward ? -1 : 1)
@@ -221,7 +221,7 @@ final class TabViewView: NSView {
             return (screen, CGRect(x: x, y: padding + 22, width: width, height: height), width / screen.frame.width)
         }
         layoutTiles()
-        return NSSize(width: x, height: padding + 22 + height + (hasMinimized ? minimizedHeight + 12 : 0) + padding)
+        return NSSize(width: x, height: padding + 22 + height + (hasMinimized ? minimizedHeight + 12 : 0) + padding + 18)
     }
 
     private func layoutTiles() {
@@ -242,6 +242,14 @@ final class TabViewView: NSView {
             return CGRect(x: entry.box.minX + x, y: entry.box.minY + y,
                           width: item.frame.width * entry.scale, height: item.frame.height * entry.scale)
                 .intersection(entry.box).insetBy(dx: 2, dy: 2)
+        }
+        // Windows stacked in one tile share a frame; fan them out a little so each can be seen.
+        var seen: [CGRect: Int] = [:]
+        for index in tileRects.indices where !items[index].isMinimized {
+            let key = tileRects[index].integral
+            let n = seen[key, default: 0]
+            seen[key] = n + 1
+            if n > 0 { tileRects[index] = tileRects[index].offsetBy(dx: CGFloat(n) * 10, dy: CGFloat(n) * 10) }
         }
     }
 
@@ -264,10 +272,19 @@ final class TabViewView: NSView {
             NSBezierPath(roundedRect: entry.box, xRadius: 10, yRadius: 10).fill()
             _ = index
         }
-        // Back to front, so the frontmost window is drawn on top.
-        for index in items.indices.reversed() {
+        // Back to front, so the frontmost window is drawn on top; the selection always last,
+        // so a window stacked behind another is still visible once picked.
+        for index in items.indices.reversed() where index != selected {
             drawTile(index)
         }
+        if items.indices.contains(selected) { drawTile(selected) }
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let hint = NSAttributedString(string: "⇥ next   ←→↑↓ move   release to switch   ⎋ cancel", attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraph,
+        ])
+        hint.draw(in: CGRect(x: 0, y: bounds.maxY - padding - 4, width: bounds.width, height: 16))
     }
 
     private func drawTile(_ index: Int) {

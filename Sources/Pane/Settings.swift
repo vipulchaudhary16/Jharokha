@@ -73,7 +73,14 @@ final class Settings {
 
     enum CleanSpaceBackground: String, CaseIterable {
         case graphite, mist, stone
-        var title: String { rawValue.capitalized }
+        /// Stored values stay as they were; only the names people see changed.
+        var title: String {
+            switch self {
+            case .graphite: return "Ink"
+            case .mist: return "Paper"
+            case .stone: return "Clay"
+            }
+        }
         var color: NSColor {
             switch self {
             case .graphite: return NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.18, alpha: 1)

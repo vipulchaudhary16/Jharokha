@@ -6,10 +6,13 @@ enum Toast {
     private static var hideWork: DispatchWorkItem?
 
     static func show(_ message: String) {
-        let label = NSTextField(labelWithString: message)
+        let label = NSTextField(wrappingLabelWithString: message)
         label.font = .systemFont(ofSize: 13, weight: .medium)
         label.textColor = .labelColor
-        label.sizeToFit()
+        label.alignment = .center
+        // Long notices wrap instead of running off as one line.
+        label.preferredMaxLayoutWidth = 420
+        label.frame.size = label.fittingSize
 
         let padding = CGSize(width: 18, height: 10)
         let size = CGSize(width: label.frame.width + padding.width * 2, height: label.frame.height + padding.height * 2)
@@ -23,7 +26,7 @@ enum Toast {
         background.material = .hudWindow
         background.state = .active
         background.wantsLayer = true
-        background.layer?.cornerRadius = size.height / 2
+        background.layer?.cornerRadius = min(size.height / 2, 18)
         label.frame.origin = CGPoint(x: padding.width, y: padding.height)
         background.addSubview(label)
         panel.contentView = background
@@ -37,7 +40,11 @@ enum Toast {
                                                  completionHandler: { panel.orderOut(nil) })
         }
         hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
+        // Long enough to read: a moment plus time per character.
+        DispatchQueue.main.asyncAfter(deadline: .now() + min(1.2 + Double(message.count) * 0.04, 5), execute: work)
+        // VoiceOver reads notices aloud.
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
     private static func makePanel() -> NSPanel {

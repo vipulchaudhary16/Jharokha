@@ -126,10 +126,19 @@ private struct GeneralSettings: View {
                         } catch {
                             NSAlert(error: error).runModal()
                         }
+                        if value, SMAppService.mainApp.status == .requiresApproval {
+                            // macOS wants the user to allow it in System Settings first.
+                            let alert = NSAlert()
+                            alert.messageText = "Allow Pane in Login Items"
+                            alert.informativeText = "macOS asks you to approve apps that open at login. Turn Pane on under Open at Login, then come back."
+                            alert.addButton(withTitle: "Open Login Items")
+                            alert.addButton(withTitle: "Cancel")
+                            if alert.runModal() == .alertFirstButtonReturn { SMAppService.openSystemSettingsLoginItems() }
+                        }
                         login = SMAppService.mainApp.status == .enabled
                     }
             }
-            Section("No peek") {
+            Section("No Peek") {
                 LabeledContent("Dim other windows") {
                     Slider(value: $dim, in: 0.1...0.9) { Text("\(Int(dim * 100))%") }
                         .onChange(of: dim) { _, value in settings.noPeekDim = value; onChange() }

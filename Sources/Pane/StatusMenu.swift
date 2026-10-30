@@ -19,7 +19,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Set by actions that already activate the selected window themselves.
     private var selectionHandled = false
     private weak var appRow: SwitchRowView?
-    private weak var pinRowRef: SwitchRowView?
+    private weak var pinItemRef: NSMenuItem?
     private weak var focusRow: SwitchRowView?
     private var appItemBundleID: String?
     private var display: Display?
@@ -37,8 +37,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     func updateIcon() {
         let paused = !settings.isTilingEnabled || tiler.isPausedForStageManager || !AX.isTrusted || !tiler.accessUsable
-        item.button?.image = MenuIcons.statusGlyph(paused: paused)
-        item.button?.setAccessibilityLabel(paused ? "Pane, paused" : "Pane")
+        let mode = modes.cleanSpace.isOn ? "Privacy Mode" : modes.noPeek.isOn ? "No Peek" : tiler.focusMode.isEmpty ? nil : "Focus Mode"
+        item.button?.image = MenuIcons.statusGlyph(paused: paused, modeOn: mode != nil)
+        item.button?.setAccessibilityLabel(paused ? "Pane, paused" : mode.map { "Pane, \($0) on" } ?? "Pane")
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -75,8 +76,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             self?.updateIcon()
             return Self.tilingSubtitle(on)
         }.item)
-        menu.addItem(action("Re-apply Tiling", #selector(retile), key: "r", modifiers: [.control, .option],
-                            icon: "arrow.triangle.2.circlepath", subtitle: "Put every window back in its place"))
+        // Shortcut hints come from the user's own shortcuts, so a remapped one is shown right.
+        menu.addItem(action("Re-apply Tiling", #selector(retile), icon: "arrow.triangle.2.circlepath",
+                            subtitle: "Put every window back in its place\(ShortcutStore.shared.hint(.retile))"))
         menu.addItem(.separator())
 
         if let display {
@@ -109,20 +111,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             configureAppRow(row, name: app.localizedName ?? bundleID, bundleID: bundleID, icon: app.icon)
             appRow = row
             menu.addItem(item)
-            let pinned = tiler.isPinned(bundleID)
-            let (pinItem, pinRow) = switchItem("Pin \(app.localizedName ?? bundleID) to Every Desktop",
-                                               subtitle: Self.pinSubtitle(pinned), icon: MenuIcons.symbol("pin"), isOn: pinned) { _ in nil }
-            pinRow.onChange = { [weak self, weak pinRow] on in
-                guard let self, let bundleID = self.appItemBundleID else { return nil }
-                // Closed first: pinning may ask for confirmation and restarts the Dock.
-                menu.cancelTracking()
-                DispatchQueue.main.async {
-                    self.tiler.setPinned(on, bundleID: bundleID)
-                    pinRow?.isOn = self.tiler.isPinned(bundleID)
-                }
-                return nil
-            }
-            pinRowRef = pinRow
+            // An action, not a switch: pinning asks once and restarts the Dock, so it isn't instant.
+            let pinItem = action(Self.pinTitle(app.localizedName ?? bundleID, pinned: tiler.isPinned(bundleID)),
+                                 #selector(togglePin), icon: "pin", subtitle: Self.pinSubtitle(tiler.isPinned(bundleID)))
+            pinItemRef = pinItem
             menu.addItem(pinItem)
         }
         let focusOn = display.map(tiler.isFocusMode) ?? false
@@ -183,18 +175,27 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             }
         }
         if let display, tiler.hasCustomSizes(on: display) {
-            menu.addItem(action("Reset Window Sizes", #selector(resetSizes), key: "0", modifiers: [.control, .option],
-                                icon: "arrow.up.left.and.down.right.magnifyingglass", subtitle: "Back to equal shares and your main size"))
+            menu.addItem(action("Reset Window Sizes", #selector(resetSizes), icon: "arrow.up.left.and.down.right.magnifyingglass",
+                                subtitle: "Back to equal shares\(ShortcutStore.shared.hint(.resetSizes))"))
             menu.addItem(.separator())
         }
 
-        menu.addItem(action("Settings…", #selector(showSettings), key: ",", modifiers: [.command], icon: "gearshape",
-                            subtitle: "Sizes, spacing, highlight, shortcuts and more"))
+        menu.addItem(action("Keyboard Shortcuts…", #selector(showShortcuts), icon: "keyboard"))
+        menu.addItem(action("Settings…", #selector(showSettings), key: ",", modifiers: [.command], icon: "gearshape"))
         menu.addItem(action("Quit Pane", #selector(quit), key: "q", modifiers: [.command], icon: "xmark.circle"))
     }
 
+    private static func pinTitle(_ name: String, pinned: Bool) -> String {
+        pinned ? "Unpin \(name)" : "Pin \(name) to Every Desktop…"
+    }
+
     private static func pinSubtitle(_ on: Bool) -> String {
-        on ? "On every desktop, floating, follows you between screens" : "Show it on every desktop and screen, like a video player"
+        on ? "On every desktop and screen" : "Keep it on every desktop, like a video player"
+    }
+
+    @objc private func togglePin() {
+        guard let bundleID = appItemBundleID else { return }
+        tiler.setPinned(!tiler.isPinned(bundleID), bundleID: bundleID)
     }
 
     private static func tilingSubtitle(_ on: Bool) -> String {
@@ -217,7 +218,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         if tiler.isPausedForStageManager { return "Paused while Stage Manager is on" }
         let count = tiler.tiledWindowCount
         let windows = "\(count) window\(count == 1 ? "" : "s")"
-        if let display, tiler.isFocusMode(on: display) { return "Focus mode · \(windows)" }
+        if let display, tiler.isFocusMode(on: display) { return "Focus Mode · \(windows)" }
         return "Tiling \(windows)"
     }
 
@@ -259,11 +260,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         row.update(title: "Include \(name) in Tiling", subtitle: Self.appSubtitle(tiled), icon: small, isOn: tiled)
         let pinned = tiler.isPinned(bundleID)
-        pinRowRef?.update(title: "Pin \(name) to Every Desktop", subtitle: Self.pinSubtitle(pinned),
-                          icon: MenuIcons.symbol("pin"), isOn: pinned)
+        pinItemRef?.title = Self.pinTitle(name, pinned: pinned)
+        pinItemRef?.subtitle = Self.pinSubtitle(pinned)
     }
     @objc private func retile() { tiler.retile() }
     @objc private func showSettings() { SettingsWindowController.shared.show(tab: .general) }
+    @objc private func showShortcuts() { SettingsWindowController.shared.show(tab: .keyboard) }
     @objc private func resetSizes() { tiler.resetSizes(on: display) }
     @objc private func saveLayout() { tiler.saveLayout(on: display) }
     @objc private func forgetLayout() { tiler.forgetSavedLayout(on: display) }

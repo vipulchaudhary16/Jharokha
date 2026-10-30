@@ -63,8 +63,9 @@ final class NoPeek {
 /// are stacked, which Pane can't reliably control.
 final class CleanSpace {
     private let settings = Settings.shared
-    private var backdrop: NSPanel?
-    private(set) var screen: NSScreen?
+    private var backdrops: [NSScreen: NSPanel] = [:]
+    /// Every screen is covered, so sharing the whole desktop or the wrong display leaks nothing.
+    private(set) var screens: [NSScreen] = []
     private var cards: [CGWindowID: (panel: NSPanel, view: PrivacyCardView)] = [:]
     private var pills: [CGWindowID: (panel: NSPanel, view: EyeButton)] = [:]
     private var tokens: [NSObjectProtocol] = []
@@ -72,7 +73,7 @@ final class CleanSpace {
     /// A card's Show button (or the card itself), or a shown window's Hide pill, was clicked.
     var onToggle: ((CGWindowID) -> Void)?
 
-    var isOn: Bool { backdrop != nil }
+    var isOn: Bool { !backdrops.isEmpty }
 
     struct Card {
         let window: CGWindowID
@@ -90,7 +91,7 @@ final class CleanSpace {
         }
         tokens.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                              object: nil, queue: .main) { [weak self] _ in
-            guard let self, let screen = self.screen, !NSScreen.screens.contains(screen) else { return }
+            guard let self, self.isOn, Set(self.screens) != Set(NSScreen.screens) else { return }
             self.endAutomatically()
         })
         tokens.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"),
@@ -99,21 +100,23 @@ final class CleanSpace {
         })
     }
 
-    func start(on screen: NSScreen) {
-        let panel = backdrop ?? WindowChrome.overlayPanel(clickThrough: true)
-        // Just above the desktop picture and icons, below every window.
-        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
-        panel.isOpaque = true
-        panel.backgroundColor = settings.cleanSpaceBackground.color
-        panel.setFrame(screen.frame, display: true)
-        panel.orderFrontRegardless()
-        backdrop = panel
-        self.screen = screen
+    func start() {
+        screens = NSScreen.screens
+        for screen in screens {
+            let panel = backdrops[screen] ?? WindowChrome.overlayPanel(clickThrough: true)
+            // Just above the desktop picture and icons, below every window.
+            panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+            panel.isOpaque = true
+            panel.backgroundColor = settings.cleanSpaceBackground.color
+            panel.setFrame(screen.frame, display: true)
+            panel.orderFrontRegardless()
+            backdrops[screen] = panel
+        }
     }
 
     /// Covers each hidden window with its card.
     func setCards(_ wanted: [Card]) {
-        backdrop?.backgroundColor = settings.cleanSpaceBackground.color
+        backdrops.values.forEach { $0.backgroundColor = settings.cleanSpaceBackground.color }
         let ids = Set(wanted.map(\.window))
         for (id, entry) in cards where !ids.contains(id) {
             entry.panel.orderOut(nil)
@@ -168,9 +171,9 @@ final class CleanSpace {
         cards.removeAll()
         pills.values.forEach { $0.panel.orderOut(nil) }
         pills.removeAll()
-        backdrop?.orderOut(nil)
-        backdrop = nil
-        screen = nil
+        backdrops.values.forEach { $0.orderOut(nil) }
+        backdrops.removeAll()
+        screens = []
     }
 
     private func endAutomatically() {
@@ -181,10 +184,12 @@ final class CleanSpace {
 }
 
 /// The opaque card over a hidden window: the background colour, a soft dashed outline, the
-/// app's icon and name, and a Show button. Clicking anywhere on it shows the window.
+/// app's icon and name, and a Show button. Only the button shows the window, so a stray
+/// click during a screen share reveals nothing.
 final class PrivacyCardView: NSView {
     var onShow: (() -> Void)?
     private var card: CleanSpace.Card?
+    private var buttonRect: NSRect = .zero
     private var background: Settings.CleanSpaceBackground = .graphite
     private var hovered = false { didSet { needsDisplay = true } }
 
@@ -197,15 +202,25 @@ final class PrivacyCardView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self))
     }
 
-    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseMoved(with event: NSEvent) {
+        hovered = buttonRect.contains(convert(event.locationInWindow, from: nil))
+    }
     override func mouseExited(with event: NSEvent) { hovered = false }
-    override func mouseUp(with event: NSEvent) { onShow?() }
+    override func mouseUp(with event: NSEvent) {
+        if buttonRect.contains(convert(event.locationInWindow, from: nil)) { onShow?() }
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { card.map { "Show \($0.name)" } }
+    override func accessibilityPerformPress() -> Bool { onShow?(); return true }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let card else { return }
+        buttonRect = .zero
         background.color.setFill()
         bounds.fill()
         let ink: NSColor = background == .mist ? .black : .white
@@ -237,6 +252,7 @@ final class PrivacyCardView: NSView {
         let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         let labelSize = label.size(withAttributes: [.font: font])
         let button = NSRect(x: rect.midX - (labelSize.width + 44) / 2, y: nameY - 36, width: labelSize.width + 44, height: 26)
+        buttonRect = button
         NSColor.controlAccentColor.withAlphaComponent(hovered ? 1 : 0.85).setFill()
         NSBezierPath(roundedRect: button, xRadius: 13, yRadius: 13).fill()
         if let eye = NSImage(systemSymbolName: "eye", accessibilityDescription: "Show")?
@@ -271,6 +287,11 @@ final class EyeButton: NSView {
     override func mouseEntered(with event: NSEvent) { hovered = true }
     override func mouseExited(with event: NSEvent) { hovered = false }
     override func mouseUp(with event: NSEvent) { onClick?() }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { isShown ? "Hide window" : "Show window" }
+    override func accessibilityPerformPress() -> Bool { onClick?(); return true }
 
     override func draw(_ dirtyRect: NSRect) {
         let pill = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: bounds.height / 2, yRadius: bounds.height / 2)

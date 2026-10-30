@@ -72,14 +72,13 @@ extension TilingManager {
         }
         apply(displays)
         activate(window: id)
-        Toast.show("Moved here")
     }
 
     /// ⌃⌥⇧F: never tile the active window's app again (it floats where you put it).
     func alwaysFloatActiveApp() {
         guard let id = AX.focusedWindow()?.id, let app = appName(of: id), let bundleID = app.bundleID else { return }
-        setTiling(false, forBundleID: bundleID)
-        Toast.show("\(app.name) windows will always float · turn it back on from the menu")
+        setTiling(false, forBundleID: bundleID, announce: false)
+        Toast.show("\(app.name) isn't tiled now · its windows float where you put them")
     }
 
     /// The tiled window under a point, if it is the frontmost window there.

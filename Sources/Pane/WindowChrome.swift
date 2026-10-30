@@ -14,6 +14,7 @@ final class WindowChrome {
     private var backdrop: NSPanel?
     private var dots: [CGWindowID: (panel: NSPanel, view: StackDotsView)] = [:]
     private var hideBarWork: DispatchWorkItem?
+    private var openBarWork: DispatchWorkItem?
     private var hidden = false
     private var mouseMonitors: [Any] = []
     private var hoverWork: DispatchWorkItem?
@@ -198,7 +199,20 @@ final class WindowChrome {
         let view = GripView()
         view.onHover = { [weak self] inside in
             guard let self else { return }
-            if inside, let tile = self.grip?.view.tile { self.showBar(for: tile) } else { self.scheduleHideBar() }
+            self.openBarWork?.cancel()
+            guard inside else { self.scheduleHideBar(); return }
+            if let bar = self.bar, bar.panel.isVisible, let tile = self.grip?.view.tile {
+                self.showBar(for: tile)
+                return
+            }
+            // Only a pointer that rests on the grip opens the bar; one passing by on its way to
+            // the menu bar shouldn't blur the window.
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, let tile = self.grip?.view.tile else { return }
+                self.showBar(for: tile)
+            }
+            self.openBarWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
         }
         view.onSelectSegment = { [weak self] index in
             guard let self, let tile = self.grip?.view.tile, tile.windows.indices.contains(index) else { return }
@@ -301,6 +315,7 @@ final class WindowChrome {
 
     private func hideBar() {
         hideBarWork?.cancel()
+        openBarWork?.cancel()
         bar?.panel.orderOut(nil)
         hideBackdrop()
     }
@@ -397,6 +412,8 @@ final class BackdropView: NSView {
 
     init() {
         super.init(frame: .zero)
+        // With Reduce Transparency on, a plain dim instead of the frosted blur.
+        blur.isHidden = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
@@ -405,7 +422,7 @@ final class BackdropView: NSView {
         blur.layer?.masksToBounds = true
         addSubview(blur)
         tint.wantsLayer = true
-        tint.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        tint.layer?.backgroundColor = NSColor.black.withAlphaComponent(blur.isHidden ? 0.45 : 0.18).cgColor
         tint.layer?.cornerRadius = 12
         addSubview(tint)
     }
@@ -564,7 +581,7 @@ final class ChipBarView: NSView {
         var help: String {
             switch self {
             case .primary: return "Make primary"
-            case .focus: return "Focus mode"
+            case .focus: return "Focus Mode"
             case .float: return "Float"
             case .minimize: return "Minimize"
             case .close: return "Close"

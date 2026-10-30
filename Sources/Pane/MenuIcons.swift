@@ -38,9 +38,15 @@ enum MenuIcons {
     /// from menu items, while drawn images (like the layout icons) show.
     /// The menu bar glyph: the app icon's three panes (Side layout). Solid while tiling,
     /// outlined when paused or waiting for access.
-    static func statusGlyph(paused: Bool) -> NSImage {
-        let image = NSImage(size: NSSize(width: 19, height: 15), flipped: true) { bounds in
-            let area = bounds.insetBy(dx: 1, dy: 1)
+    /// The menu bar glyph: filled panes, outlined when paused, with a dot while a mode
+    /// (Focus, No Peek, Privacy) is on, so it isn't forgotten.
+    static func statusGlyph(paused: Bool, modeOn: Bool = false) -> NSImage {
+        let image = NSImage(size: NSSize(width: modeOn ? 24 : 19, height: 15), flipped: true) { bounds in
+            if modeOn {
+                NSColor.black.set()
+                NSBezierPath(ovalIn: CGRect(x: bounds.maxX - 4.5, y: 0.5, width: 4.5, height: 4.5)).fill()
+            }
+            let area = CGRect(x: 0, y: 0, width: 19, height: 15).insetBy(dx: 1, dy: 1)
             let gap: CGFloat = 1.6
             let mainWidth = ((area.width - gap) * 0.56).rounded()
             let main = CGRect(x: area.minX, y: area.minY, width: mainWidth, height: area.height)

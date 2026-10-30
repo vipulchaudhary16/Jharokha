@@ -1,7 +1,7 @@
 import AppKit
 import Carbon
 
-/// No peek and Clean Space, kept in step with the active window.
+/// No Peek and Privacy Mode, kept in step with the active window.
 final class ModeController {
     let noPeek = NoPeek()
     let cleanSpace = CleanSpace()
@@ -18,7 +18,7 @@ final class ModeController {
 
     func toggleNoPeek() {
         noPeek.setOn(!noPeek.isOn, below: AX.focusedWindow()?.id)
-        Toast.show(noPeek.isOn ? "No peek\(ShortcutStore.shared.hint(.noPeek, "to stop"))" : "No peek off")
+        Toast.show(noPeek.isOn ? "No Peek\(ShortcutStore.shared.hint(.noPeek, "to stop"))" : "No Peek off")
         onChange?()
     }
 
@@ -28,21 +28,11 @@ final class ModeController {
             return
         }
         let window = AX.focusedWindow()
-        let screen: NSScreen?
-        if let frame = window?.frame {
-            let height = NSScreen.screens.first?.frame.maxY ?? 0
-            let center = NSPoint(x: frame.midX, y: height - frame.midY)
-            screen = NSScreen.screens.first { $0.frame.contains(center) }
-        } else {
-            // No active window: the screen under the pointer becomes plain.
-            screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
-        }
-        guard let screen = screen ?? NSScreen.main else { return }
         cleanWindow = window?.id
         // At first only the window you're in is shown; each other tile gets an eye to show it too.
         shown = window.map { [$0.id] } ?? []
         if let id = window?.id, Settings.shared.cleanSpaceFillsScreen { tiler.setFocusMode(true, window: id) }
-        cleanSpace.start(on: screen)
+        cleanSpace.start()
         update()
         Toast.show("Privacy Mode\(ShortcutStore.shared.hint(.cleanSpace, "to bring everything back"))")
         onChange?()
@@ -75,11 +65,11 @@ final class ModeController {
     func update() {
         let focused = AX.focusedWindow()
         noPeek.update(below: focused?.id)
-        guard cleanSpace.isOn, let screen = cleanSpace.screen else { return }
+        guard cleanSpace.isOn else { return }
 
-        let tiles = tiler.chromeTiles().filter { $0.screen == screen }
+        let tiles = tiler.chromeTiles().filter { cleanSpace.screens.contains($0.screen) }
         let tiled = Set(tiles.flatMap(\.windows))
-        let others = Self.untiledWindows(on: screen, excluding: tiled)
+        let others = cleanSpace.screens.flatMap { Self.untiledWindows(on: $0, excluding: tiled) }
         let present = tiled.union(others.map(\.id))
         shown.removeAll { !present.contains($0) }
 
