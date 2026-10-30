@@ -297,12 +297,20 @@ final class TilingManager {
             return
         }
         window.setFrame(rect)
-        if let accepted = window.frame { learnMinimum(id, accepted: accepted, requested: rect) }
+        // Only a size that moved toward the request but stopped short is a minimum. A size that
+        // hasn't changed yet may just be an app that resizes a moment later (Notes, Electron apps);
+        // those are caught by the repeated-refusal check above once they settle.
+        if let accepted = window.frame, !accepted.size.isClose(to: frame.size) {
+            learnMinimum(id, accepted: accepted, requested: rect)
+        }
     }
 
     /// An app that ends up larger than asked has a minimum size; remember it per app.
     private func learnMinimum(_ id: CGWindowID, accepted: CGRect, requested: CGRect) {
         guard let bundleID = bundleIDs[id] else { return }
+        // A "minimum" larger than any screen is a misreading (e.g. a window mid-animation), not a limit.
+        let roomiest = Display.current().map(\.rect.size)
+        guard roomiest.contains(where: { accepted.width <= $0.width && accepted.height <= $0.height }) else { return }
         var learned = settings.learnedMinimum(for: bundleID)
         var grew = false
         if accepted.width > requested.width + 1, accepted.width > learned.width {

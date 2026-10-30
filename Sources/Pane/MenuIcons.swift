@@ -34,10 +34,21 @@ enum MenuIcons {
         return draw(size: size, tiles: frames, in: virtual)
     }
 
+    /// An SF Symbol redrawn into a plain template image: this macOS drops symbol images
+    /// from menu items, while drawn images (like the layout icons) show.
     static func symbol(_ name: String) -> NSImage? {
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
-        image?.isTemplate = true
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular)) else { return nil }
+        let size = NSSize(width: 20, height: 16)
+        let image = NSImage(size: size, flipped: false) { bounds in
+            let s = symbol.size
+            let scale = min(1, bounds.width / s.width, bounds.height / s.height)
+            let rect = CGRect(x: (bounds.width - s.width * scale) / 2, y: (bounds.height - s.height * scale) / 2,
+                              width: s.width * scale, height: s.height * scale)
+            symbol.draw(in: rect)
+            return true
+        }
+        image.isTemplate = true
         return image
     }
 

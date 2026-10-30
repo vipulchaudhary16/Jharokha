@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Builds Pane and wraps it into build/Pane.app.
-# Signs with $SIGN_IDENTITY when set; otherwise ad-hoc, which means macOS asks for
-# Accessibility access again after every rebuild.
+# Signs with $SIGN_IDENTITY, else the local "Pane Local Signing" certificate when the
+# keychain has it, else ad-hoc. A stable identity keeps the Accessibility grant across
+# rebuilds; ad-hoc signing makes macOS ask again after every build.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -36,5 +37,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --options runtime --sign "${SIGN_IDENTITY:--}" "$APP"
+IDENTITY="${SIGN_IDENTITY:-}"
+if [[ -z "$IDENTITY" ]] && security find-identity -p codesigning | grep -q "Pane Local Signing"; then
+    IDENTITY="Pane Local Signing"
+fi
+codesign --force --options runtime --sign "${IDENTITY:--}" "$APP"
+echo "Signed with ${IDENTITY:-ad-hoc identity}"
 echo "Built $PWD/$APP"

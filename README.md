@@ -5,12 +5,12 @@ Automatic window tiling for macOS 15+. Every window gets a place as it opens, an
 ## Build and run
 
 ```sh
-./scripts/bundle.sh          # builds build/Pane.app (ad-hoc signed)
-open build/Pane.app          # menu bar only; grant Accessibility access when asked
+./scripts/install.sh         # builds, installs to /Applications and relaunches
+                             # menu bar only; grant Accessibility access when asked
 swift run PaneCoreChecks     # layout and tiling model checks
 ```
 
-This needs only the Command Line Tools, not Xcode. Ad-hoc signing changes the app's identity on every build, so macOS asks for Accessibility access again each time. To avoid that, set `SIGN_IDENTITY` to a stable signing identity.
+This needs only the Command Line Tools, not Xcode. Builds are signed with the "Pane Local Signing" certificate when your login keychain has one, so the Accessibility grant survives rebuilds. Without it they're ad-hoc signed, and macOS asks again after every build. `SIGN_IDENTITY` overrides the choice.
 
 ## Layout
 
