@@ -1,5 +1,5 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 
 /// Menu icons drawn from the layout engine itself, so each one shows exactly what the
 /// option does: the real tile arrangement, in the shape of the screen it applies to.
@@ -131,7 +131,7 @@ enum MenuIcons {
     }
 }
 
-/// The top of the menu: what Pane is doing and a live miniature of the current screen,
+/// The top of the menu: what Jharokha is doing and a live miniature of the current screen,
 /// with each tile's app icon. Click a tile to select its window (the menu stays open, so
 /// Focus Mode and the app switch act on it); double-click to switch to it.
 final class LayoutPreviewView: NSView {

@@ -1,5 +1,5 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 
 /// What the window chrome (borders, grips, stack dots) and the modes need from the tiler.
 extension TilingManager {
@@ -15,7 +15,7 @@ extension TilingManager {
     /// Every tile on screen now, with the active one marked. Empty while tiling is paused.
     func chromeTiles() -> [ChromeTile] {
         guard canTile else { return [] }
-        // Resolved like keyboard commands: an app focusing a helper window Pane doesn't tile
+        // Resolved like keyboard commands: an app focusing a helper window Jharokha doesn't tile
         // (Electron apps do) still has an active tile, so its grip doesn't vanish.
         let focused = context()?.window ?? AX.focusedWindow()?.id
         var result: [ChromeTile] = []
@@ -84,7 +84,7 @@ extension TilingManager {
     /// The tiled window under a point, if it is the frontmost window there.
     func tiledWindow(at point: CGPoint) -> CGWindowID? {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        // Pane's own borders and No peek / Clean Space layers sit at the normal level too; skip them.
+        // Jharokha's own borders and No peek / Clean Space layers sit at the normal level too; skip them.
         for entry in info where entry[kCGWindowLayer as String] as? Int == 0
             && entry[kCGWindowOwnerPID as String] as? pid_t != getpid() {
             guard let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat],

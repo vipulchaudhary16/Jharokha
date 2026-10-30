@@ -60,7 +60,7 @@ final class NoPeek {
 /// background replaces the desktop picture, below every window. Each hidden window gets its
 /// own opaque card laid exactly over it (app icon and name, never content), above normal
 /// windows; shown windows simply have no card. Nothing depends on how other apps' windows
-/// are stacked, which Pane can't reliably control.
+/// are stacked, which Jharokha can't reliably control.
 final class CleanSpace {
     private let settings = Settings.shared
     private var backdrops: [NSScreen: NSPanel] = [:]
@@ -223,7 +223,7 @@ final class PrivacyCardView: NSView {
         buttonRect = .zero
         background.color.setFill()
         bounds.fill()
-        let ink: NSColor = background == .mist ? .black : .white
+        let ink = background.ink
         let rect = bounds.insetBy(dx: 2, dy: 2)
         let path = NSBezierPath(roundedRect: rect, xRadius: 16, yRadius: 16)
         ink.withAlphaComponent(hovered ? 0.09 : 0.05).setFill()

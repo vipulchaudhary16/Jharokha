@@ -1,5 +1,5 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 import ServiceManagement
 
 /// The menu bar item. The menu is rebuilt each time it opens so it always shows the
@@ -10,7 +10,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let modes: ModeController
     private let chrome: WindowChrome
     private let settings = Settings.shared
-    /// The app in front when the menu opened; the menu bar does not activate Pane, so this is the user's app.
+    /// The app in front when the menu opened; the menu bar does not activate Jharokha, so this is the user's app.
     private var frontApp: NSRunningApplication?
     /// A window picked by clicking its tile in the preview; Focus Mode and the app switch
     /// act on it, and it becomes active when the menu closes.

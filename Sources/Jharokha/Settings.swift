@@ -1,5 +1,5 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 
 /// User preferences, persisted in UserDefaults. Layout and window count are per display.
 final class Settings {
@@ -56,11 +56,12 @@ final class Settings {
     }
 
     enum HighlightColor: String, CaseIterable {
-        case accent, blue, purple, pink, orange, green, graphite
+        case accent, terracotta, blue, purple, pink, orange, green, graphite
         var title: String { rawValue == "accent" ? "Accent Color" : rawValue.capitalized }
         var color: NSColor {
             switch self {
             case .accent: return .controlAccentColor
+            case .terracotta: return NSColor(calibratedRed: 0.89, green: 0.33, blue: 0.2, alpha: 1)   // Jharokha's own
             case .blue: return .systemBlue
             case .purple: return .systemPurple
             case .pink: return .systemPink
@@ -76,18 +77,21 @@ final class Settings {
         /// Stored values stay as they were; only the names people see changed.
         var title: String {
             switch self {
-            case .graphite: return "Ink"
-            case .mist: return "Paper"
-            case .stone: return "Clay"
+            case .graphite: return "Jodhpur Indigo"
+            case .mist: return "Makrana Marble"
+            case .stone: return "Jaisalmer Sandstone"
             }
         }
+        /// Colours of Rajasthan: the blue city's walls, palace marble, golden fort stone.
         var color: NSColor {
             switch self {
-            case .graphite: return NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.18, alpha: 1)
-            case .mist: return NSColor(calibratedRed: 0.86, green: 0.87, blue: 0.89, alpha: 1)
-            case .stone: return NSColor(calibratedRed: 0.62, green: 0.58, blue: 0.53, alpha: 1)
+            case .graphite: return NSColor(calibratedRed: 0.12, green: 0.16, blue: 0.27, alpha: 1)
+            case .mist: return NSColor(calibratedRed: 0.93, green: 0.91, blue: 0.88, alpha: 1)
+            case .stone: return NSColor(calibratedRed: 0.80, green: 0.64, blue: 0.44, alpha: 1)
             }
         }
+        /// Text and outlines on this background.
+        var ink: NSColor { self == .graphite ? .white : .black }
     }
 
     var highlightStyle: HighlightStyle {
@@ -186,7 +190,7 @@ final class Settings {
         set { defaults.set(newValue, forKey: "hasOnboarded") }
     }
 
-    /// Dock desktop assignments apps had before Pane pinned them, by lowercased bundle ID.
+    /// Dock desktop assignments apps had before Jharokha pinned them, by lowercased bundle ID.
     var previousSpaceBindings: [String: String] {
         get { defaults.dictionary(forKey: "previousSpaceBindings") as? [String: String] ?? [:] }
         set { defaults.set(newValue, forKey: "previousSpaceBindings") }

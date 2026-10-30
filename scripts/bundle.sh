@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds Jharokha (the Pane target) and wraps it into build/Jharokha.app.
+# Builds Jharokha and wraps it into build/Jharokha.app.
 # Signs with $SIGN_IDENTITY, else the local "Pane Local Signing" certificate when the
 # keychain has it, else ad-hoc. A stable identity keeps the Accessibility grant across
 # rebuilds; ad-hoc signing makes macOS ask again after every build.
@@ -9,8 +9,8 @@ cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-release}"
 VERSION="${VERSION:-0.1.0}"
 
-swift build -c "$CONFIG" --product Pane
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/Pane"
+swift build -c "$CONFIG" --product Jharokha
+BIN="$(swift build -c "$CONFIG" --show-bin-path)/Jharokha"
 
 APP="build/Jharokha.app"
 rm -rf "$APP"

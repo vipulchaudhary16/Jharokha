@@ -1,6 +1,6 @@
 import CoreGraphics
 
-@testable import PaneCore
+@testable import JharokhaCore
 
 struct LayoutTests {
     let screen = CGRect(x: 0, y: 25, width: 1000, height: 800)

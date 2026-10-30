@@ -1,5 +1,5 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 
 /// A compact menu row of icon buttons: the four layouts, drawn from the layout engine.
 /// Picking one acts at once and keeps the menu open.

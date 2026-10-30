@@ -73,7 +73,7 @@ final class ModeController {
         let present = tiled.union(others.map(\.id))
         shown.removeAll { !present.contains($0) }
 
-        // Every tile without a shown window is covered by a card; so is any window Pane
+        // Every tile without a shown window is covered by a card; so is any window Jharokha
         // doesn't tile, so nothing on that screen slips through.
         var cards: [CleanSpace.Card] = tiles.filter { tile in !tile.windows.contains { shown.contains($0) } }.map { tile in
             CleanSpace.Card(window: tile.showing, rect: tile.rect, icon: tiler.appIcon(of: tile.showing),
@@ -89,7 +89,7 @@ final class ModeController {
         cleanSpace.setPills(shownTiles + shownOthers)
     }
 
-    /// On-screen windows of other apps on a screen that Pane doesn't tile (floating,
+    /// On-screen windows of other apps on a screen that Jharokha doesn't tile (floating,
     /// excluded apps, dialogs), with their frames in AX coordinates.
     private static func untiledWindows(on screen: NSScreen, excluding tiled: Set<CGWindowID>)
         -> [(id: CGWindowID, frame: CGRect, icon: NSImage?, name: String)] {

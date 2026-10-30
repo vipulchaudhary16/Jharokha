@@ -1,5 +1,5 @@
 
-@testable import PaneCore
+@testable import JharokhaCore
 
 struct ScreenTilesTests {
     func newWindowsGetTilesUntilFullThenStack() {

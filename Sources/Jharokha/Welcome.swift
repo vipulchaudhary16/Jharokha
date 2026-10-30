@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The first-run welcome: what Pane does, why it needs Accessibility access, the shortcuts
+/// The first-run welcome: what Jharokha does, why it needs Accessibility access, the shortcuts
 /// worth knowing, and a choice to tidy windows now or later. Nothing moves until it's done.
 final class WelcomeController {
     static let shared = WelcomeController()
@@ -36,6 +36,12 @@ final class WelcomeController {
     }
 }
 
+/// Jharokha's colours: terracotta walls and sandstone, from the palaces the name comes from.
+enum Brand {
+    static let terracotta = Color(red: 0.89, green: 0.33, blue: 0.2)
+    static let sandstone = Color(red: 0.96, green: 0.89, blue: 0.80)
+}
+
 private struct WelcomeView: View {
     let onFinish: (Bool) -> Void
     @State private var step = 0
@@ -61,7 +67,7 @@ private struct WelcomeView: View {
             HStack {
                 HStack(spacing: 6) {
                     ForEach(0..<steps, id: \.self) { i in
-                        Capsule().fill(i == step ? Color.accentColor : Color.secondary.opacity(0.3))
+                        Capsule().fill(i == step ? Brand.terracotta : Color.secondary.opacity(0.3))
                             .frame(width: i == step ? 18 : 6, height: 6)
                     }
                 }
@@ -75,7 +81,10 @@ private struct WelcomeView: View {
             .padding(.horizontal, 28)
             .padding(.bottom, 24)
         }
-        .frame(width: 540, height: 470)
+        .frame(width: 540, height: 490)
+        // A warm sandstone wash and terracotta controls.
+        .background(LinearGradient(colors: [Brand.sandstone.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom))
+        .tint(Brand.terracotta)
         .onReceive(poll) { _ in trusted = AX.isUsable }
     }
 
@@ -97,9 +106,12 @@ private struct WelcomeView: View {
     private var intro: some View {
         VStack(spacing: 18) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
-            Text("Welcome to Jharokha").font(.system(size: 28, weight: .bold))
-            Text("Jharokha arranges your windows into tiles the moment you open them. No dragging, no snapping.")
-                .font(.title3).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 400)
+            VStack(spacing: 4) {
+                Text("Welcome to Jharokha").font(.system(size: 28, weight: .bold))
+                Text("झरोखा · the carved windows of Rajasthan's palaces").font(.callout).foregroundStyle(Brand.terracotta)
+            }
+            Text("Like a jharokha's many small panes, each placed with care, Jharokha gives every window its own place the moment you open it.")
+                .font(.title3).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
             VStack(alignment: .leading, spacing: 12) {
                 feature("rectangle.split.2x2", "Four layouts, remembered for each desktop")
                 feature("square.stack", "Windows stack neatly when a screen is full")
@@ -113,7 +125,7 @@ private struct WelcomeView: View {
     private var access: some View {
         VStack(spacing: 16) {
             Image(systemName: trusted ? "checkmark.shield.fill" : "lock.shield")
-                .font(.system(size: 54)).foregroundStyle(trusted ? Color.green : Color.accentColor)
+                .font(.system(size: 54)).foregroundStyle(trusted ? Color.green : Brand.terracotta)
                 .contentTransition(.symbolEffect(.replace))
             Text("Let Jharokha move your windows").font(.system(size: 24, weight: .bold))
             Text("macOS lets window managers move windows only with Accessibility access. Jharokha uses it just to see where windows are and put them in place. It never records your screen and doesn't use the network.")
@@ -153,7 +165,7 @@ private struct WelcomeView: View {
 
     private var tidy: some View {
         VStack(spacing: 18) {
-            Image(systemName: "sparkles.rectangle.stack").font(.system(size: 54)).foregroundStyle(Color.accentColor)
+            Image(systemName: "sparkles.rectangle.stack").font(.system(size: 54)).foregroundStyle(Brand.terracotta)
             Text("Ready for your first tidy?").font(.system(size: 24, weight: .bold))
             Text("Jharokha will arrange the windows on your screens now. Re-apply puts them back any time, and you can switch Automatic Tiling off from the menu bar.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
@@ -177,7 +189,7 @@ private struct WelcomeView: View {
         Label {
             Text(text)
         } icon: {
-            Image(systemName: symbol).foregroundStyle(Color.accentColor).frame(width: 24)
+            Image(systemName: symbol).foregroundStyle(Brand.terracotta).frame(width: 24)
         }
         .font(.body)
     }

@@ -1,7 +1,7 @@
 import Carbon
 
 /// Global keyboard shortcuts through Carbon's RegisterEventHotKey, which needs no extra
-/// permission and only ever sees Pane's own key combinations.
+/// permission and only ever sees Jharokha's own key combinations.
 final class HotKeys {
     static let shared = HotKeys()
 

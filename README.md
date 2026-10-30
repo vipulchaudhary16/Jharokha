@@ -2,22 +2,22 @@
 
 Automatic window tiling for macOS 15+. Every window gets a place as it opens, and the rest reflow when one closes.
 
-A jharokha (झरोखा) is the carved, latticed window of Rajasthani palaces. The code still uses the working name Pane (targets, folders and the `dev.pane.Pane` bundle identifier, which keeps Accessibility access and settings across the rename).
+A jharokha (झरोखा) is the carved, latticed window of Rajasthani palaces. Its working name was Pane: the bundle identifier `dev.pane.Pane` and the "Pane Local Signing" certificate keep it, so Accessibility access and settings carry over.
 
 ## Build and run
 
 ```sh
 ./scripts/install.sh         # builds, installs to /Applications and relaunches
                              # menu bar only; grant Accessibility access when asked
-swift run PaneCoreChecks     # layout and tiling model checks
+swift run JharokhaCoreChecks     # layout and tiling model checks
 ```
 
 This needs only the Command Line Tools, not Xcode. Builds are signed with the "Pane Local Signing" certificate when your login keychain has one, so the Accessibility grant survives rebuilds. Without it they're ad-hoc signed, and macOS asks again after every build. `SIGN_IDENTITY` overrides the choice.
 
 ## Layout
 
-- `Sources/PaneCore`: the pure layout engine (Grid, Columns, Rows, Side, plus ultrawide and vertical handling) and the per-screen tile and stack model.
-- `Sources/Pane`: the app. It has the Accessibility window wrapper, window observer, tiling manager, hotkeys, menu bar and toasts.
+- `Sources/JharokhaCore`: the pure layout engine (Grid, Columns, Rows, Side, plus ultrawide and vertical handling) and the per-screen tile and stack model.
+- `Sources/Jharokha`: the app. It has the Accessibility window wrapper, window observer, tiling manager, hotkeys, menu bar and toasts.
 
 ## Shortcuts (⌃⌥ prefix, remappable in Settings › Keyboard)
 

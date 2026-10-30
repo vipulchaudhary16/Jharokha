@@ -213,7 +213,7 @@ final class ShortcutStore {
         return " · \(shortcut.display)" + (text.map { " \($0)" } ?? "")
     }
 
-    /// The other Pane action already using this combination, if any.
+    /// The other Jharokha action already using this combination, if any.
     func action(using shortcut: Shortcut, except: ShortcutAction) -> ShortcutAction? {
         ShortcutAction.allCases.first { $0 != except && self.shortcut(for: $0) == shortcut }
     }
@@ -234,7 +234,7 @@ final class ShortcutStore {
         return result
     }
 
-    /// A combination for the same key that neither macOS nor another Pane action uses.
+    /// A combination for the same key that neither macOS nor another Jharokha action uses.
     func suggestion(for shortcut: Shortcut, action: ShortcutAction, taken: Set<Shortcut>) -> Shortcut? {
         let options: [UInt32] = [
             Shortcut.prefix, Shortcut.prefix | UInt32(shiftKey), Shortcut.prefix | UInt32(cmdKey),

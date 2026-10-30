@@ -1,5 +1,5 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 
 // Private SkyLight calls, the only way to know which Space a display is showing.
 @_silgen_name("CGSMainConnectionID")

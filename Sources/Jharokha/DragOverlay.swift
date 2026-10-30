@@ -79,7 +79,7 @@ final class DragOverlayView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        // A faint dim tells you Pane is showing where windows can go.
+        // A faint dim tells you Jharokha is showing where windows can go.
         NSColor.black.withAlphaComponent(0.12).setFill()
         bounds.fill()
 

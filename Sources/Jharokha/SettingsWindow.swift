@@ -160,6 +160,21 @@ private struct GeneralSettings: View {
                 Text("Off: the shared window keeps its place, and the others show as cards with their app's icon and name — never their content.")
                     .font(.callout).foregroundStyle(.secondary)
             }
+            Section {
+                HStack(spacing: 14) {
+                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("Jharokha").font(.headline)
+                            Text("झरोखा").foregroundStyle(Brand.terracotta)
+                            Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                                .font(.caption).foregroundStyle(.tertiary)
+                        }
+                        Text("Named after the carved stone windows of Rajasthan's palaces: many small panes, each in its place.")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
     }
@@ -252,7 +267,7 @@ private struct ShortcutRow: View {
     }
 }
 
-/// A button that records the next key combination pressed. Pane's own shortcuts are
+/// A button that records the next key combination pressed. Jharokha's own shortcuts are
 /// paused while recording, so pressing one doesn't trigger it.
 private struct ShortcutRecorder: NSViewRepresentable {
     let display: String
@@ -313,7 +328,7 @@ final class RecorderButton: NSButton {
     }
 
     /// Leaving the field any way at all (closing the window, switching tabs, the row being
-    /// rebuilt) ends recording, so Pane's shortcuts are always registered again.
+    /// rebuilt) ends recording, so Jharokha's shortcuts are always registered again.
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil, isRecording { stop() }
         super.viewWillMove(toWindow: newWindow)

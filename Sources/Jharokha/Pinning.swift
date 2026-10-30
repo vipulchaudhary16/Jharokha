@@ -1,5 +1,5 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 
 /// Pinned apps: on every desktop, floating (never tiled), and following you between screens.
 ///

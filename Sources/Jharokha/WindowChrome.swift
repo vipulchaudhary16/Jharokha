@@ -1,6 +1,6 @@
 import AppKit
 
-/// Everything Pane draws around tiled windows: the highlight (border or glow), the grip
+/// Everything Jharokha draws around tiled windows: the highlight (border or glow), the grip
 /// above the active window with its stack chips or quick actions, the dots above other
 /// stacked tiles, and hover-to-focus. Rebuilt after every layout pass and focus change.
 final class WindowChrome {

@@ -1,9 +1,9 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 
 /// Smart placement: the windows that need the most room get the tiles that fit them.
 extension TilingManager {
-    /// Apps that work best in a big window, before Pane has learned anything about them.
+    /// Apps that work best in a big window, before Jharokha has learned anything about them.
     private static let roomyApps: [(prefix: String, width: CGFloat)] = [
         ("com.apple.Safari", 1000), ("com.google.Chrome", 1000), ("company.thebrowser", 1000), ("org.mozilla.firefox", 1000),
         ("com.microsoft.edgemac", 1000), ("com.brave.Browser", 1000), ("com.microsoft.VSCode", 1000),
@@ -29,7 +29,7 @@ extension TilingManager {
         }
         let minimums = state.tiles.map(tileMinimum)
         // Arrangements where every window fits come first, so smart placement never forces
-        // Pane to tile fewer windows than it otherwise could.
+        // Jharokha to tile fewer windows than it otherwise could.
         let order = LayoutEngine.assignBySize(tiles: rects, needs: needs) { order in
             LayoutEngine.fit(kind: settings.layout(for: display), count: order.count, in: display.rect,
                              mainRatio: settings.mainRatio, gap: settings.gap, shape: display.shape,

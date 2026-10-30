@@ -1,5 +1,5 @@
 import AppKit
-import PaneCore
+import JharokhaCore
 
 /// Resizing: dragging the edge between two windows (the neighbours make room live) and
 /// ⌃⌥= / ⌃⌥- / ⌃⌥0. Sizes belong to positions, so they survive swaps, and are kept per

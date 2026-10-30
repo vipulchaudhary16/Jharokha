@@ -1,6 +1,6 @@
 import AppKit
 import OSLog
-import PaneCore
+import JharokhaCore
 
 /// `log stream --predicate 'subsystem == "dev.pane.Pane"'` follows what the tiler does.
 let log = Logger(subsystem: "dev.pane.Pane", category: "tiling")
@@ -20,7 +20,7 @@ final class TilingManager {
     var floating: Set<CGWindowID> = []
     /// Focus mode: per display key, the window that fills the screen.
     var focusMode: [String: CGWindowID] = [:]
-    /// The frame Pane last asked each window to take.
+    /// The frame Jharokha last asked each window to take.
     var targets: [CGWindowID: CGRect] = [:]
     /// The last tiled window that had focus; new windows stack into its tile on a full screen.
     var lastFocused: CGWindowID?
@@ -35,7 +35,7 @@ final class TilingManager {
     private var grabbed: CGWindowID?
     private var lastPrune = Date.distantPast
     private var minimumsChanged = false
-    /// Per display key, the app whose size made Pane tile fewer windows (to notify once).
+    /// Per display key, the app whose size made Jharokha tile fewer windows (to notify once).
     private var limitedBy: [String: String] = [:]
 
     private var pendingRefresh: DispatchWorkItem?
@@ -84,7 +84,7 @@ final class TilingManager {
     var solvedCapacity: [String: Int] = [:]
     /// The windows each screen had when it was last arranged by size.
     var arrangedMembers: [String: Set<CGWindowID>] = [:]
-    /// Windows that keep refusing their tile's frame (an app minimum Pane hasn't fitted yet).
+    /// Windows that keep refusing their tile's frame (an app minimum Jharokha hasn't fitted yet).
     var refusing: Set<CGWindowID> = []
     /// Frames of refusing windows when the current mouse press started moving things; for them
     /// a drag or resize is judged against this, not against a target they never reached.
@@ -93,7 +93,7 @@ final class TilingManager {
     private var applyDepth = 0
     let animator = WindowAnimator()
     private var healthTimer: Timer?
-    /// Whether macOS currently accepts Pane's Accessibility calls.
+    /// Whether macOS currently accepts Jharokha's Accessibility calls.
     private(set) var accessUsable = true
     private(set) var isPausedForStageManager = false
     private(set) var isRunning = false
@@ -113,7 +113,7 @@ final class TilingManager {
         // An unresponsive app must not stall the tiler for the default 6 seconds.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
         observer.onChange = { [weak self] change in self?.handle(change) }
-        // Pane's own animation moves windows constantly; check the layout once they settle.
+        // Jharokha's own animation moves windows constantly; check the layout once they settle.
         animator.onIdle = { [weak self] in
             self?.onAnimationsSettled?()
             self?.scheduleRefresh(after: 0.05)
@@ -188,7 +188,7 @@ final class TilingManager {
             self.windowMovedDuringPress = false
             self.pressFrames = [:]
             self.grabbed = nil
-            // Moving things by hand is a fresh start for windows Pane had given up on.
+            // Moving things by hand is a fresh start for windows Jharokha had given up on.
             if movedByHand {
                 self.writes.removeAll()
                 self.refusing.removeAll()
@@ -218,7 +218,7 @@ final class TilingManager {
     }
 
     /// Moved by the user: same size as before the press, origin away from its tile. A window
-    /// Pane is animating is moving on its own, never because of the user.
+    /// Jharokha is animating is moving on its own, never because of the user.
     private func isBeingDragged(_ id: CGWindowID) -> Bool {
         guard animator.target(of: id) == nil, grabbed == nil || grabbed == id,
               let frame = windows[id]?.frame, let target = targets[id],
@@ -804,7 +804,7 @@ final class TilingManager {
         let focused = AX.focusedWindow()
         if let id = focused?.id, let context = locate(id) { return context }
         // Some apps (Electron ones like Discord especially) give focus to a hidden helper
-        // window Pane doesn't tile. Then the command means the front app's tiled window:
+        // window Jharokha doesn't tile. Then the command means the front app's tiled window:
         // the one last used if it belongs to that app, else its showing one.
         let pid = focused?.pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
         guard let pid else { return nil }
@@ -981,7 +981,7 @@ final class TilingManager {
 
     /// Puts every window back in its place and says whether anything had moved.
     /// Also re-attaches to every app and forgets refused writes, so it recovers tiling that
-    /// stalled, e.g. after Accessibility access was re-granted while Pane was running.
+    /// stalled, e.g. after Accessibility access was re-granted while Jharokha was running.
     func retile() {
         guard AX.isUsable else {
             log.error("Retile: Accessibility access is not usable (\(String(describing: AX.probe()), privacy: .public))")

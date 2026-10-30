@@ -1,5 +1,5 @@
 // A minimal test runner: Command Line Tools can build swift-testing but cannot run it,
-// so the core checks run as a plain executable (`swift run PaneCoreChecks`).
+// so the core checks run as a plain executable (`swift run JharokhaCoreChecks`).
 import Foundation
 
 nonisolated(unsafe) var failures = 0

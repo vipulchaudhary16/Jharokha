@@ -2,18 +2,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "Pane",
+    name: "Jharokha",
     platforms: [.macOS(.v15)],
     targets: [
         // Pure layout and tiling model: no AppKit, no Accessibility, fully unit-tested.
-        .target(name: "PaneCore"),
+        .target(name: "JharokhaCore"),
         .executableTarget(
-            name: "Pane",
-            dependencies: ["PaneCore"],
+            name: "Jharokha",
+            dependencies: ["JharokhaCore"],
             linkerSettings: [.linkedFramework("Carbon")]
         ),
         // Command Line Tools can build swift-testing but not run it, so checks are an executable.
-        .executableTarget(name: "PaneCoreChecks", dependencies: ["PaneCore"], path: "Tests/PaneCoreChecks"),
+        .executableTarget(name: "JharokhaCoreChecks", dependencies: ["JharokhaCore"], path: "Tests/JharokhaCoreChecks"),
     ],
     swiftLanguageModes: [.v5]
 )

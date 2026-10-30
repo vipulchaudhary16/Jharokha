@@ -97,7 +97,7 @@ struct AXWindow {
         raise()
         element.set(kAXMainAttribute, kCFBooleanTrue)
         // A background app can't reliably activate another one through NSRunningApplication;
-        // AXFrontmost works whenever Pane has Accessibility access.
+        // AXFrontmost works whenever Jharokha has Accessibility access.
         AXUIElementCreateApplication(pid).set(kAXFrontmostAttribute, kCFBooleanTrue)
     }
 }
@@ -105,7 +105,7 @@ struct AXWindow {
 enum AX {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
-    /// After a rebuild, System Settings can show Pane as allowed while macOS still rejects
+    /// After a rebuild, System Settings can show Jharokha as allowed while macOS still rejects
     /// its calls. This asks the frontmost app for its windows to tell the two apart.
     static func probe() -> AXError {
         guard let app = NSWorkspace.shared.frontmostApplication else { return .success }
@@ -114,7 +114,7 @@ enum AX {
                                              kAXWindowsAttribute as CFString, &value)
     }
 
-    /// Trusted, and macOS actually accepts Pane's Accessibility calls.
+    /// Trusted, and macOS actually accepts Jharokha's Accessibility calls.
     static var isUsable: Bool { isTrusted && probe() != .apiDisabled }
 
     static func requestTrust() {
