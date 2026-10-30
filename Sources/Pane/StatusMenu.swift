@@ -120,13 +120,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         if let app = frontApp, let bundleID = app.bundleIdentifier, app.processIdentifier != getpid() {
             let name = app.localizedName ?? bundleID
             let tiled = !settings.excludedBundleIDs.contains(bundleID)
-            let entry = toggle("Tile \(name)", on: tiled, #selector(toggleFrontApp))
+            let entry = toggle("Include \(name) in Tiling", on: tiled, #selector(toggleFrontApp))
             entry.image = app.icon.map { icon in
                 let small = icon.copy() as! NSImage
                 small.size = NSSize(width: 16, height: 16)
                 return small
             }
-            entry.subtitle = tiled ? "Its windows join the layout" : "Its windows stay where you put them"
+            entry.subtitle = tiled ? "On: its windows are part of the layout"
+                                   : "Off: its windows are left where you put them"
             menu.addItem(entry)
         }
         let focusOn = display.map(tiler.isFocusMode) ?? false

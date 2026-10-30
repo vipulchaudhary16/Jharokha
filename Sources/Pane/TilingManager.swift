@@ -519,13 +519,30 @@ final class TilingManager {
         refresh()
         let tiled = tiledWindowCount
         log.info("Retile: \(tiled) windows tiled, \(moved) had moved")
-        if tiled == 0 {
-            Toast.show("No windows to tile on this Space")
-        } else if moved == 0 {
-            Toast.show("Tiling \(tiled) window\(tiled == 1 ? "" : "s")")
-        } else {
-            Toast.show("Put \(moved) window\(moved == 1 ? "" : "s") back")
+        var message = tiled == 0 ? "No windows to tile on this Space"
+            : moved == 0 ? "Tiling \(tiled) window\(tiled == 1 ? "" : "s")"
+            : "Put \(moved) window\(moved == 1 ? "" : "s") back"
+        // Say which visible apps are left out, so an excluded app isn't mistaken for a bug.
+        let skipped = excludedAppsWithWindows()
+        if !skipped.isEmpty {
+            message += " · \(skipped.joined(separator: ", ")) \(skipped.count == 1 ? "is" : "are") excluded"
         }
+        Toast.show(message)
+    }
+
+    /// Names of excluded apps that have a window on screen right now.
+    private func excludedAppsWithWindows() -> [String] {
+        let excluded = settings.excludedBundleIDs
+        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let owners = Set(info.compactMap { entry -> pid_t? in
+            guard entry[kCGWindowLayer as String] as? Int == 0 else { return nil }
+            return entry[kCGWindowOwnerPID as String] as? pid_t
+        })
+        return NSWorkspace.shared.runningApplications.compactMap { app in
+            guard let bundleID = app.bundleIdentifier, excluded.contains(bundleID),
+                  owners.contains(app.processIdentifier) else { return nil }
+            return app.localizedName
+        }.sorted()
     }
 
     func setCapacity(_ count: Int, on display: Display? = nil) {
@@ -570,6 +587,8 @@ final class TilingManager {
         if enabled { excluded.remove(bundleID) } else { excluded.insert(bundleID) }
         settings.excludedBundleIDs = excluded
         refresh()
+        let name = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.localizedName ?? bundleID
+        Toast.show(enabled ? "\(name) is tiled again" : "\(name) won't be tiled · choose again to include it")
     }
 }
 
