@@ -379,6 +379,7 @@ final class TilingManager {
         }
         // Windows that are only briefly missing keep their tile but aren't moved.
         apply(displays, excluding: Set(transient.values.joined()))
+        followWithPinnedWindows()
         onStateChange?()
     }
 
@@ -431,7 +432,7 @@ final class TilingManager {
 
     /// Tileable windows, plus each on-screen window's z-order (0 = frontmost).
     private func enumerateWindows() -> ([AXWindow], [CGWindowID: Int]) {
-        let excluded = settings.excludedBundleIDs
+        let excluded = settings.excludedBundleIDs.union(settings.pinnedBundleIDs)
         // AX can report windows from other Spaces for some apps; keep only those on screen now.
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         var onScreen: [CGWindowID: Int] = [:]

@@ -83,7 +83,7 @@ enum ShortcutAction: String, CaseIterable {
     case swapLeft, swapRight, swapUp, swapDown
     case makePrimary, nextWindow, previousWindow, nextInTile, previousInTile, stackDown, stackUp, tabView, tabViewBackward
     case grow, shrink, resetSizes
-    case float, alwaysFloat, focusMode, noPeek, cleanSpace, retile
+    case float, alwaysFloat, pinApp, focusMode, noPeek, cleanSpace, retile
     case tile1, tile2, tile3, tile4, tile5
 
     enum Group: String, CaseIterable { case move = "Move", activate = "Activate", size = "Size", more = "More" }
@@ -118,6 +118,7 @@ enum ShortcutAction: String, CaseIterable {
         case .resetSizes: return "Reset window sizes on this screen"
         case .float: return "Float the active window, or tile it again"
         case .alwaysFloat: return "Always float windows like the active one"
+        case .pinApp: return "Pin the active app to every desktop"
         case .focusMode: return "Focus mode"
         case .noPeek: return "No peek: fade every other window"
         case .cleanSpace: return "Privacy Mode: share one window, the rest as app cards"
@@ -152,6 +153,7 @@ enum ShortcutAction: String, CaseIterable {
         case .resetSizes: return Shortcut(29)
         case .float: return Shortcut(3)
         case .alwaysFloat: return Shortcut(3, p | shift)
+        case .pinApp: return Shortcut(35, p | cmd)
         case .focusMode: return Shortcut(6)
         case .noPeek: return Shortcut(2)
         case .cleanSpace: return Shortcut(35)

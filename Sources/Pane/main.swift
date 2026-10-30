@@ -189,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .resetSizes: tiler.resetSizes()
         case .float: tiler.toggleFloat()
         case .alwaysFloat: tiler.alwaysFloatActiveApp()
+        case .pinApp: tiler.togglePin()
         case .focusMode: tiler.toggleFocusMode()
         case .noPeek: modes.toggleNoPeek()
         case .cleanSpace: modes.toggleCleanSpace()

@@ -32,6 +32,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "gap") }
     }
 
+    /// Apps pinned to every desktop: never tiled, and following you between screens.
+    var pinnedBundleIDs: Set<String> {
+        get { Set(defaults.stringArray(forKey: "pinnedBundleIDs") ?? []) }
+        set { defaults.set(Array(newValue).sorted(), forKey: "pinnedBundleIDs") }
+    }
+
     var excludedBundleIDs: Set<String> {
         get { Set(defaults.stringArray(forKey: "excludedBundleIDs") ?? Array(Self.defaultExcluded)) }
         set { defaults.set(Array(newValue).sorted(), forKey: "excludedBundleIDs") }

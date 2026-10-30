@@ -19,6 +19,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Set by actions that already activate the selected window themselves.
     private var selectionHandled = false
     private weak var appRow: SwitchRowView?
+    private weak var pinRowRef: SwitchRowView?
     private weak var focusRow: SwitchRowView?
     private var appItemBundleID: String?
     private var display: Display?
@@ -108,6 +109,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             configureAppRow(row, name: app.localizedName ?? bundleID, bundleID: bundleID, icon: app.icon)
             appRow = row
             menu.addItem(item)
+            let pinned = tiler.isPinned(bundleID)
+            let (pinItem, pinRow) = switchItem("Pin \(app.localizedName ?? bundleID) to Every Desktop",
+                                               subtitle: Self.pinSubtitle(pinned), icon: MenuIcons.symbol("pin"), isOn: pinned) { _ in nil }
+            pinRow.onChange = { [weak self, weak pinRow] _ in
+                guard let self, let bundleID = self.appItemBundleID else { return nil }
+                menu.cancelTracking()
+                DispatchQueue.main.async {
+                    self.tiler.togglePin(bundleID: bundleID)
+                    pinRow?.isOn = self.tiler.isPinned(bundleID)
+                }
+                return nil
+            }
+            pinRowRef = pinRow
+            menu.addItem(pinItem)
         }
         let focusOn = display.map(tiler.isFocusMode) ?? false
         let (focusItem, row) = switchItem("Focus Mode", subtitle: Self.focusSubtitle(focusOn, app: nil),
@@ -177,6 +192,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(action("Quit Pane", #selector(quit), key: "q", modifiers: [.command], icon: "xmark.circle"))
     }
 
+    private static func pinSubtitle(_ on: Bool) -> String {
+        on ? "On every desktop, floating, follows you between screens" : "Show it on every desktop and screen, like a video player"
+    }
+
     private static func tilingSubtitle(_ on: Bool) -> String {
         on ? "Place windows as they open" : "Off: windows stay where you put them"
     }
@@ -238,6 +257,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             return small
         }
         row.update(title: "Include \(name) in Tiling", subtitle: Self.appSubtitle(tiled), icon: small, isOn: tiled)
+        let pinned = tiler.isPinned(bundleID)
+        pinRowRef?.update(title: "Pin \(name) to Every Desktop", subtitle: Self.pinSubtitle(pinned),
+                          icon: MenuIcons.symbol("pin"), isOn: pinned)
     }
     @objc private func retile() { tiler.retile() }
     @objc private func showSettings() { SettingsWindowController.shared.show(tab: .general) }
