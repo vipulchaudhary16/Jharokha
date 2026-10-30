@@ -163,15 +163,17 @@ final class Settings {
 
     /// Layout and window-count changes go to every screen (the default), or only to the
     /// screen they were made on. Either way they apply to every Space of that screen.
+    /// One layout and count for every screen and desktop, instead of each desktop
+    /// remembering its own (the default).
     var appliesToAllScreens: Bool {
-        get { defaults.object(forKey: "appliesToAllScreens") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "appliesToAllScreens") }
+        get { defaults.object(forKey: "sameLayoutEverywhere") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "sameLayoutEverywhere") }
     }
 
-    /// The defaults key for a per-screen setting: shared by all screens, or one screen's own,
-    /// falling back to the shared value until that screen is changed.
+    /// The defaults key for a per-desktop setting: shared everywhere, or this desktop's own,
+    /// falling back to the last choice made anywhere until this desktop gets one.
     private func key(_ name: String, for display: Display, writing: Bool = false) -> String {
-        let own = "\(name).\(display.uuid)"
+        let own = "\(name).\(display.persistentKey)"
         if appliesToAllScreens { return "\(name).all" }
         return writing || defaults.object(forKey: own) != nil ? own : "\(name).all"
     }
@@ -183,6 +185,7 @@ final class Settings {
 
     func setLayout(_ kind: LayoutKind, for display: Display) {
         defaults.set(kind.rawValue, forKey: key("layout", for: display, writing: true))
+        defaults.set(kind.rawValue, forKey: "layout.all")   // new desktops start from the latest choice
     }
 
     /// How many windows get their own tile on this display (default 3), clamped to what the
@@ -194,6 +197,24 @@ final class Settings {
 
     func setCapacity(_ count: Int, for display: Display) {
         defaults.set(count, forKey: key("count", for: display, writing: true))
+        defaults.set(count, forKey: "count.all")
+    }
+
+    /// Custom split sizes per desktop, layout and count (see `TilingManager.weightsKey`).
+    var splitWeights: [String: SplitWeights] {
+        get { defaults.dictionary(forKey: "splitWeights") as? [String: SplitWeights] ?? [:] }
+        set { defaults.set(newValue, forKey: "splitWeights") }
+    }
+
+    /// A desktop's saved arrangement: for each tile, the bundle IDs of its windows.
+    func savedArrangement(for display: Display) -> [[String]]? {
+        defaults.dictionary(forKey: "savedArrangements")?[display.persistentKey] as? [[String]]
+    }
+
+    func setSavedArrangement(_ arrangement: [[String]]?, for display: Display) {
+        var all = defaults.dictionary(forKey: "savedArrangements") ?? [:]
+        all[display.persistentKey] = arrangement
+        defaults.set(all, forKey: "savedArrangements")
     }
 
     func maxCount(for display: Display) -> Int {

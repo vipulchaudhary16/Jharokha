@@ -104,6 +104,7 @@ final class TilingManager {
         guard !isRunning else { return }
         isRunning = true
         log.info("Tiling started")
+        splitWeights = settings.splitWeights
         // An unresponsive app must not stall the tiler for the default 6 seconds.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
         observer.onChange = { [weak self] change in self?.handle(change) }
@@ -364,7 +365,8 @@ final class TilingManager {
             let members = Set(state.allWindows)
             if members != arrangedMembers[display.key] {
                 arrangedMembers[display.key] = members
-                arrangeBySize(display, &state)
+                // A saved layout puts its apps back; smart placement handles the rest otherwise.
+                if !arrangeBySaved(display, &state) { arrangeBySize(display, &state) }
             }
             states[display.key] = state
             if let zoomed = focusMode[display.key], !state.contains(zoomed) { focusMode[display.key] = nil }

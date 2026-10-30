@@ -85,8 +85,10 @@ private struct GeneralSettings: View {
                     ForEach([0, 4, 8, 12, 16], id: \.self) { Text($0 == 0 ? "None" : "\($0) pt").tag($0) }
                 }
                 .onChange(of: gap) { _, value in settings.gap = Double(value); controller.onLayoutSettingsChanged?() }
-                Toggle("Apply layout and window count to every screen", isOn: $allScreens)
+                Toggle("Same layout on every screen and desktop", isOn: $allScreens)
                     .onChange(of: allScreens) { _, value in settings.appliesToAllScreens = value; controller.onLayoutSettingsChanged?() }
+                Text("Off: each desktop remembers its own layout, window count and sizes, even after a restart.")
+                    .font(.callout).foregroundStyle(.secondary)
                 Toggle("Smart placement: windows that need more room get the bigger tiles", isOn: $smart)
                     .onChange(of: smart) { _, value in settings.arrangesBySize = value; if value { controller.onRearrange?() } }
                 LabeledContent("Learned window sizes") {

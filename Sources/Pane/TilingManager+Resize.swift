@@ -5,9 +5,12 @@ import PaneCore
 /// ⌃⌥= / ⌃⌥- / ⌃⌥0. Sizes belong to positions, so they survive swaps, and are kept per
 /// display, Space, layout and window count until reset.
 extension TilingManager {
+    /// Sizes are kept per desktop (stable across restarts), layout and window count.
     func weightsKey(_ display: Display, count: Int) -> String {
-        "\(display.key)|\(settings.layout(for: display).rawValue)\(count)"
+        "\(display.persistentKey)|\(settings.layout(for: display).rawValue)\(count)"
     }
+
+    func saveSizes() { settings.splitWeights = splitWeights }
 
     private func resizeWeights(display: Display, tile: Int, to frame: CGRect) -> SplitWeights {
         let count = states[display.key]?.tiles.count ?? 0
@@ -70,6 +73,7 @@ extension TilingManager {
             splitWeights[weightsKey(display, count: states[display.key]?.tiles.count ?? 0)] =
                 resizeWeights(display: display, tile: tile, to: frame)
         }
+        saveSizes()
         apply(displays)
         onResizeEnd?()
     }
@@ -98,6 +102,7 @@ extension TilingManager {
             NSSound.beep()
             Toast.show(grow ? "Maximum size reached" : "Minimum size reached")
         }
+        saveSizes()
         onStateChange?()
     }
 
@@ -105,7 +110,8 @@ extension TilingManager {
     func resetSizes(on display: Display? = nil) {
         guard let display = display ?? targetDisplay() else { return }
         let hadCustom = hasCustomSizes(on: display)
-        splitWeights = splitWeights.filter { !$0.key.hasPrefix(display.key + "|") }
+        splitWeights = splitWeights.filter { !$0.key.hasPrefix(display.persistentKey + "|") }
+        saveSizes()
         guard canTile else { return }
         apply(Display.current())
         Toast.show(hadCustom ? "Window sizes reset" : "Windows are at their starting sizes")
@@ -113,6 +119,6 @@ extension TilingManager {
     }
 
     func hasCustomSizes(on display: Display) -> Bool {
-        splitWeights.keys.contains { $0.hasPrefix(display.key + "|") }
+        splitWeights.keys.contains { $0.hasPrefix(display.persistentKey + "|") }
     }
 }

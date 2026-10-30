@@ -85,7 +85,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             picker.onPick = { [weak self] kind in self?.tiler.setLayout(kind, on: self?.display) }
             let pickerItem = NSMenuItem()
             pickerItem.view = picker
-            menu.addItem(header(shared ? "Layout" : "Layout on This Screen"))
+            menu.addItem(header(shared ? "Layout" : "Layout · \(display.desktopName)"))
             menu.addItem(pickerItem)
 
             // A shared count is offered up to what the roomiest screen holds.
@@ -156,6 +156,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }.item)
         menu.addItem(.separator())
 
+        if let display {
+            let saved = tiler.hasSavedLayout(on: display)
+            menu.addItem(action(saved ? "Update Saved Layout for \(display.desktopName)" : "Save Layout for \(display.desktopName)",
+                                #selector(saveLayout), icon: "square.and.arrow.down",
+                                subtitle: saved ? "Its apps go back to their saved tiles" : "Remember which app goes in which tile here"))
+            if saved {
+                menu.addItem(action("Forget Saved Layout", #selector(forgetLayout), icon: "trash",
+                                    subtitle: "Smart placement arranges this desktop again"))
+            }
+        }
         if let display, tiler.hasCustomSizes(on: display) {
             menu.addItem(action("Reset Window Sizes", #selector(resetSizes), key: "0", modifiers: [.control, .option],
                                 icon: "arrow.up.left.and.down.right.magnifyingglass", subtitle: "Back to equal shares and your main size"))
@@ -232,6 +242,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func retile() { tiler.retile() }
     @objc private func showSettings() { SettingsWindowController.shared.show(tab: .general) }
     @objc private func resetSizes() { tiler.resetSizes(on: display) }
+    @objc private func saveLayout() { tiler.saveLayout(on: display) }
+    @objc private func forgetLayout() { tiler.forgetSavedLayout(on: display) }
 
     private static func noPeekSubtitle(_ on: Bool) -> String {
         on ? "On: other windows are faded\(ShortcutStore.shared.hint(.noPeek))" : "Fade every window except the active one\(ShortcutStore.shared.hint(.noPeek))"

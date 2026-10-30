@@ -39,4 +39,48 @@ extension TilingManager {
         }
         if order != Array(state.tiles.indices) { state.arrange(order) }
     }
+
+    // MARK: - Saved layouts
+
+    /// Puts apps back in the tiles a saved layout gives them; other windows fill the rest in order.
+    /// Returns false when this desktop has no saved layout.
+    @discardableResult
+    func arrangeBySaved(_ display: Display, _ state: inout ScreenTiles) -> Bool {
+        guard let saved = settings.savedArrangement(for: display) else { return false }
+        guard state.tiles.count > 1 else { return true }
+        var remaining = Array(state.tiles.indices)
+        var order: [Int] = []
+        for bundles in saved {
+            let wanted = Set(bundles)
+            if let index = remaining.first(where: { i in
+                !wanted.isDisjoint(with: state.tiles[i].windows.compactMap { bundleIDs[$0] })
+            }) {
+                order.append(index)
+                remaining.removeAll { $0 == index }
+            }
+        }
+        order += remaining
+        if order != Array(state.tiles.indices) { state.arrange(order) }
+        return true
+    }
+
+    /// Saves which app is in which tile on this desktop (its layout, count and sizes are
+    /// remembered anyway), so they go back there whenever windows come and go.
+    func saveLayout(on display: Display? = nil) {
+        guard let display = display ?? targetDisplay(), let state = states[display.key] else { return }
+        let arrangement = state.tiles.map { tile in tile.windows.compactMap { bundleIDs[$0] } }
+        settings.setSavedArrangement(arrangement, for: display)
+        let names = state.tiles.compactMap { appName(of: $0.showing)?.name }
+        Toast.show("Saved \(display.desktopName): \(settings.layout(for: display).title) · \(names.joined(separator: ", "))")
+        onStateChange?()
+    }
+
+    func forgetSavedLayout(on display: Display? = nil) {
+        guard let display = display ?? targetDisplay() else { return }
+        settings.setSavedArrangement(nil, for: display)
+        Toast.show("Forgot the saved layout for \(display.desktopName)")
+        onStateChange?()
+    }
+
+    func hasSavedLayout(on display: Display) -> Bool { settings.savedArrangement(for: display) != nil }
 }
