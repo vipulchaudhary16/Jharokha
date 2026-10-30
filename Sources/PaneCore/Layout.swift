@@ -345,38 +345,52 @@ public enum LayoutEngine {
         return best?.index
     }
 
-    /// Which window goes in which tile, so windows that need the most room get the tiles that
-    /// fit them: a window needing width gets the widest tile, one needing height the tallest,
-    /// in descending order of need. Windows with no known need keep their current order in
-    /// the tiles left over. Returns, for each tile position, the index of the window for it.
-    public static func assignBySize(tiles: [CGRect], needs: [CGSize]) -> [Int] {
+    /// Which window goes in which tile, so the windows that need the most room get the tiles
+    /// that give it: width to windows that need width, height to those that need height,
+    /// weighted by how much they need. Every arrangement is tried (a screen has at most a few
+    /// tiles); those where every window fits (`isFeasible`) win, and among equals windows stay
+    /// where they are. Returns, for each tile position, the index of the window for it.
+    public static func assignBySize(tiles: [CGRect], needs: [CGSize],
+                                    isFeasible: ([Int]) -> Bool = { _ in true }) -> [Int] {
         let n = min(tiles.count, needs.count)
-        guard n > 1 else { return Array(0..<n) }
-        var freeTiles = Set(0..<n)
-        var result = [Int](repeating: -1, count: n)
-        let needy = (0..<n).filter { needs[$0].width > 0 || needs[$0].height > 0 }
-            .sorted { needs[$0].width * max(needs[$0].height, 1) + needs[$0].width + needs[$0].height
-                    > needs[$1].width * max(needs[$1].height, 1) + needs[$1].width + needs[$1].height }
-        for window in needy {
-            let need = needs[window]
-            let best = freeTiles.max { a, b in
-                func score(_ t: Int) -> (Int, CGFloat) {
-                    let tile = tiles[t]
-                    let fits = (tile.width >= need.width ? 1 : 0) + (tile.height >= need.height ? 1 : 0)
-                    // Prefer the dimension it needs more of; otherwise the bigger tile.
-                    let room = need.width > need.height ? tile.width : need.height > need.width ? tile.height : tile.width * tile.height
-                    return (fits, room)
-                }
-                let (fa, ra) = score(a), (fb, rb) = score(b)
-                return fa != fb ? fa < fb : (ra != rb ? ra < rb : a > b)
-            }!
-            result[best] = window
-            freeTiles.remove(best)
+        let identity = Array(0..<n)
+        guard n > 1, n <= 7, needs.contains(where: { $0.width > 0 || $0.height > 0 }) else { return identity }
+
+        func score(_ order: [Int]) -> Double {
+            var total = 0.0
+            for (position, window) in order.enumerated() {
+                let tile = tiles[position], need = needs[window]
+                // Pairing big needs with big dimensions maximises this sum.
+                total += Double(tile.width * need.width + tile.height * need.height)
+                if position == window { total += 1 }   // stay put when nothing is gained
+            }
+            return total
         }
-        // The rest keep their relative order in the remaining tiles.
-        let rest = (0..<n).filter { !needy.contains($0) }
-        for (tile, window) in zip(freeTiles.sorted(), rest) { result[tile] = window }
-        return result
+
+        var best = identity
+        var bestScore = -Double.infinity
+        var bestFeasible = false
+        var current = identity
+        func permute(_ k: Int) {
+            if k == n {
+                let feasible = isFeasible(current)
+                guard feasible || !bestFeasible else { return }
+                let value = score(current)
+                if (feasible && !bestFeasible) || value > bestScore {
+                    best = current
+                    bestScore = value
+                    bestFeasible = feasible
+                }
+                return
+            }
+            for i in k..<n {
+                current.swapAt(k, i)
+                permute(k + 1)
+                current.swapAt(k, i)
+            }
+        }
+        permute(0)
+        return best
     }
 
     /// Index of the rect containing `point`, if any.

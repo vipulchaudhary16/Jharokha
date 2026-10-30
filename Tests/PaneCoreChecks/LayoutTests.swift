@@ -171,8 +171,8 @@ struct LayoutTests {
 
     func biggestNeedsGetTheBiggestTiles() {
         let tiles = frames(.side, 3) // big left, two small right
-        // Window 2 needs width (a browser), window 0 nothing known, window 1 a little height.
-        let order = LayoutEngine.assignBySize(tiles: tiles, needs: [.zero, CGSize(width: 0, height: 300), CGSize(width: 700, height: 0)])
+        // Window 2 wants a big window (a browser), window 0 nothing known, window 1 a little height.
+        let order = LayoutEngine.assignBySize(tiles: tiles, needs: [.zero, CGSize(width: 0, height: 300), CGSize(width: 700, height: 500)])
         expect(order[0] == 2)
         expect(Set(order) == [0, 1, 2])
     }
@@ -186,5 +186,13 @@ struct LayoutTests {
         // Rows: the first row is tallest with a 0.6 ratio.
         let tiles = frames(.rows, 2, ratio: 0.6)
         expect(LayoutEngine.assignBySize(tiles: tiles, needs: [CGSize(width: 0, height: 100), CGSize(width: 0, height: 450)]) == [1, 0])
+    }
+
+    func arrangementsThatFitWin() {
+        // Rows of 2 on an 800-tall screen at 0.6: the 480 row can hold a 450 minimum, the 320 row can't.
+        let tiles = frames(.rows, 2, ratio: 0.6)
+        let needs = [CGSize(width: 900, height: 0), CGSize(width: 0, height: 450)]
+        let order = LayoutEngine.assignBySize(tiles: tiles, needs: needs) { order in order[0] == 1 }
+        expect(order == [1, 0])
     }
 }

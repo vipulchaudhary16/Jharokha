@@ -40,6 +40,7 @@ run("growingBothEdgesOfAMiddleColumn", layout.growingBothEdgesOfAMiddleColumn)
 run("biggestNeedsGetTheBiggestTiles", layout.biggestNeedsGetTheBiggestTiles)
 run("unknownNeedsKeepTheirOrder", layout.unknownNeedsKeepTheirOrder)
 run("heightNeedGetsTheTallestTile", layout.heightNeedGetsTheTallestTile)
+run("arrangementsThatFitWin", layout.arrangementsThatFitWin)
 
 let tiles = ScreenTilesTests()
 run("newWindowsGetTilesUntilFullThenStack", tiles.newWindowsGetTilesUntilFullThenStack)
