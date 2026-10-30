@@ -717,7 +717,11 @@ final class TilingManager {
 
     /// Shows the next or previous window in the active tile's stack.
     func cycleStack(step: Int) {
-        guard let c = context(), let next = states[c.display.key]?.cycle(tile: c.tile, by: step) else { return }
+        guard let c = context() else { return }
+        guard let next = states[c.display.key]?.cycle(tile: c.tile, by: step) else {
+            Toast.show("This window isn't in a stack")
+            return
+        }
         apply(c.displays)
         windows[next]?.focus()
     }

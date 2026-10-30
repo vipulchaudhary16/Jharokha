@@ -81,7 +81,7 @@ struct Shortcut: Equatable, Hashable {
 /// Every action that can have a keyboard shortcut, with its default.
 enum ShortcutAction: String, CaseIterable {
     case swapLeft, swapRight, swapUp, swapDown
-    case makePrimary, nextWindow, previousWindow, nextInTile, previousInTile, tabView, tabViewBackward
+    case makePrimary, nextWindow, previousWindow, nextInTile, previousInTile, stackDown, stackUp, tabView, tabViewBackward
     case grow, shrink, resetSizes
     case float, alwaysFloat, focusMode, noPeek, cleanSpace, retile
     case tile1, tile2, tile3, tile4, tile5
@@ -91,7 +91,8 @@ enum ShortcutAction: String, CaseIterable {
     var group: Group {
         switch self {
         case .swapLeft, .swapRight, .swapUp, .swapDown: return .move
-        case .makePrimary, .nextWindow, .previousWindow, .nextInTile, .previousInTile, .tabView, .tabViewBackward: return .activate
+        case .makePrimary, .nextWindow, .previousWindow, .nextInTile, .previousInTile, .stackDown, .stackUp, .tabView, .tabViewBackward:
+            return .activate
         case .grow, .shrink, .resetSizes: return .size
         default: return .more
         }
@@ -108,6 +109,8 @@ enum ShortcutAction: String, CaseIterable {
         case .previousWindow: return "Activate the previous window"
         case .nextInTile: return "Show the next window in this tile"
         case .previousInTile: return "Show the previous window in this tile"
+        case .stackDown: return "Scroll down through this tile's stack"
+        case .stackUp: return "Scroll up through this tile's stack"
         case .tabView: return "Tab View: every window, by screen"
         case .tabViewBackward: return "Tab View, moving backwards"
         case .grow: return "Make the active window bigger"
@@ -140,6 +143,8 @@ enum ShortcutAction: String, CaseIterable {
         case .previousWindow: return Shortcut(33)
         case .nextInTile: return Shortcut(50)
         case .previousInTile: return Shortcut(50, p | shift)
+        case .stackDown: return Shortcut(125, p | cmd)
+        case .stackUp: return Shortcut(126, p | cmd)
         case .tabView: return Shortcut(48, UInt32(optionKey))
         case .tabViewBackward: return Shortcut(48, UInt32(optionKey) | shift)
         case .grow: return Shortcut(24)

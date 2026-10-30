@@ -177,6 +177,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .previousWindow: tiler.activate(step: -1)
         case .nextInTile: tiler.cycleStack(step: 1)
         case .previousInTile: tiler.cycleStack(step: -1)
+        case .stackDown: tiler.cycleStack(step: 1)
+        case .stackUp: tiler.cycleStack(step: -1)
         case .tabView: tabView.advance(backward: false)
         case .tabViewBackward: tabView.advance(backward: true)
         case .grow: tiler.resizeActive(grow: true)

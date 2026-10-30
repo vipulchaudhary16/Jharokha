@@ -159,6 +159,10 @@ final class WindowChrome {
         let entry = grip ?? makeGrip()
         grip = entry
         entry.view.icons = active.windows.map { tiler.appIcon(of: $0) }
+        let store = ShortcutStore.shared
+        entry.view.toolTip = active.windows.count > 1
+            ? "\(active.windows.count) windows in this stack\(store.hint(.stackDown, "/")) \(store.shortcut(for: .stackUp)?.display ?? "") to scroll through them"
+            : nil
         entry.view.showingIndex = active.windows.firstIndex(of: active.showing) ?? 0
         entry.view.tile = active
         let size = entry.view.intrinsicSize
