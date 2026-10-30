@@ -35,6 +35,12 @@ final class TilingManager {
 
     private var pendingRefresh: DispatchWorkItem?
     private var dragTimer: Timer?
+    private let dragOverlay = DragOverlay()
+    private var iconCache: [pid_t: NSImage] = [:]
+    /// A window moved while the mouse was down: look for the one being dragged.
+    private var windowMovedDuringPress = false
+    /// The tiled window being dragged, once identified, and the display it came from.
+    private var dragged: (id: CGWindowID, displayKey: String)?
     private var healthTimer: Timer?
     /// Whether macOS currently accepts Pane's Accessibility calls.
     private(set) var accessUsable = true
@@ -75,7 +81,12 @@ final class TilingManager {
             // New windows often settle their role, size and position a moment after creation.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.refresh() }
         case .movedOrResized:
-            if Self.isMouseDown { beginDragWatch() } else { scheduleRefresh(after: 0.08) }
+            if Self.isMouseDown {
+                windowMovedDuringPress = true
+                beginDragWatch()
+            } else {
+                scheduleRefresh(after: 0.08)
+            }
         case .destroyed, .focusChanged, .other:
             scheduleRefresh(after: 0.03)
         }
@@ -94,12 +105,94 @@ final class TilingManager {
     private func beginDragWatch() {
         guard dragTimer == nil else { return }
         dragTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
-            guard let self, !Self.isMouseDown else { return }
+            guard let self else { return }
+            guard !Self.isMouseDown else {
+                self.updateDragPreview()
+                return
+            }
             timer.invalidate()
             self.dragTimer = nil
+            self.dragOverlay.hide()
+            self.dragged = nil
+            self.windowMovedDuringPress = false
             self.handleDrop()
             self.refresh()
         }
+    }
+
+    /// The tiled window whose position (not size) has left its tile: it is being dragged.
+    /// A resize changes the size, so it never shows the overlay.
+    private func findDraggedWindow(_ displays: [Display]) -> (id: CGWindowID, displayKey: String)? {
+        for display in displays {
+            guard let state = states[display.key] else { continue }
+            for id in state.showingWindows {
+                guard let frame = windows[id]?.frame, let target = targets[id],
+                      frame.size.isClose(to: target.size), !frame.origin.isClose(to: target.origin) else { continue }
+                return (id, display.key)
+            }
+        }
+        return nil
+    }
+
+    /// Outlines every tile and previews the drop: on another tile of the same screen the two
+    /// windows swap; on another screen the window moves there; anywhere else it goes back.
+    private func updateDragPreview() {
+        guard canTile, windowMovedDuringPress else { return }
+        let displays = Display.current()
+        if dragged == nil { dragged = findDraggedWindow(displays) }
+        guard let dragged, let source = states[dragged.displayKey],
+              let sourceTile = source.tileIndex(of: dragged.id) else { return }
+
+        let mouse = NSEvent.axMouseLocation
+        let mouseDisplay = displays.containing(mouse)
+        let draggedIcon = appIcon(of: dragged.id)
+        let draggedName = appName(of: dragged.id)?.name ?? "This window"
+
+        var scenes: [DragOverlay.Scene] = []
+        for display in displays {
+            let state = states[display.key] ?? ScreenTiles()
+            let rects = rects(for: display)
+            let underMouse = mouseDisplay?.key == display.key ? LayoutEngine.tile(at: mouse, in: rects) : nil
+            var tiles: [DragOverlay.Tile] = []
+
+            if display.key == dragged.displayKey {
+                let target = underMouse.flatMap { $0 == sourceTile ? nil : $0 }
+                for (index, rect) in rects.enumerated() where state.tiles.indices.contains(index) {
+                    let showing = state.tiles[index].showing
+                    if index == target {
+                        let other = appName(of: showing)?.name ?? "that window"
+                        tiles.append(.init(rect: rect, role: .target, icon: draggedIcon, caption: "Drop to swap with \(other)"))
+                    } else if index == sourceTile {
+                        if let target {
+                            let movingBack = state.tiles[target].showing
+                            tiles.append(.init(rect: rect, role: .source, icon: appIcon(of: movingBack),
+                                               caption: "\(appName(of: movingBack)?.name ?? "It") moves here"))
+                        } else {
+                            tiles.append(.init(rect: rect, role: .source, icon: draggedIcon,
+                                               caption: mouseDisplay?.key == display.key ? "Release to put back" : nil))
+                        }
+                    } else {
+                        tiles.append(.init(rect: rect, role: .normal, icon: appIcon(of: showing), caption: nil))
+                    }
+                }
+            } else {
+                let hasRoom = state.tiles.count < settings.capacity(for: display)
+                let isTarget = mouseDisplay?.key == display.key
+                for (index, rect) in rects.enumerated() where state.tiles.indices.contains(index) {
+                    let highlighted = isTarget && (hasRoom ? index == rects.count - 1 : index == (underMouse ?? 0))
+                    tiles.append(.init(rect: rect, role: highlighted ? .target : .normal,
+                                       icon: highlighted ? draggedIcon : appIcon(of: state.tiles[index].showing),
+                                       caption: highlighted ? (hasRoom ? "Move \(draggedName) to this screen"
+                                                                       : "Stack \(draggedName) here") : nil))
+                }
+                if isTarget && rects.isEmpty {
+                    tiles.append(.init(rect: display.rect.insetBy(dx: settings.gap, dy: settings.gap), role: .target,
+                                       icon: draggedIcon, caption: "Move \(draggedName) to this screen"))
+                }
+            }
+            scenes.append(.init(screen: display.screen, tiles: tiles))
+        }
+        dragOverlay.show(scenes)
     }
 
     private static var isStageManagerOn: Bool {
@@ -506,8 +599,14 @@ final class TilingManager {
         window.focus()
     }
 
+    /// Cached per app, so the same icon instance comes back and the drag overlay only
+    /// redraws when what it shows actually changes.
     func appIcon(of id: CGWindowID) -> NSImage? {
-        windows[id].flatMap { NSRunningApplication(processIdentifier: $0.pid)?.icon }
+        guard let pid = windows[id]?.pid else { return nil }
+        if let icon = iconCache[pid] { return icon }
+        let icon = NSRunningApplication(processIdentifier: pid)?.icon
+        iconCache[pid] = icon
+        return icon
     }
 
     func appName(of id: CGWindowID) -> (name: String, bundleID: String?)? {
