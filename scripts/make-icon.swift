@@ -1,15 +1,34 @@
-// Draws Pane's app icon and writes Resources/AppIcon.icns.
+// Draws Jharokha's app icon and writes Resources/AppIcon.icns.
 // Run: swift scripts/make-icon.swift   (from the repository root; needs iconutil)
 import AppKit
 
 let canvas: CGFloat = 1024
 
+func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
+    NSColor(calibratedRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
+            blue: CGFloat(hex & 0xff) / 255, alpha: alpha).cgColor
+}
+
+/// A round-topped arch: straight sides from `bottom`, a half circle on top.
+func archPath(minX: CGFloat, maxX: CGFloat, bottom: CGFloat, springLine: CGFloat) -> CGPath {
+    let path = CGMutablePath()
+    let radius = (maxX - minX) / 2
+    path.move(to: CGPoint(x: minX, y: bottom))
+    path.addLine(to: CGPoint(x: minX, y: springLine))
+    path.addArc(center: CGPoint(x: minX + radius, y: springLine), radius: radius, startAngle: .pi, endAngle: 0, clockwise: true)
+    path.addLine(to: CGPoint(x: maxX, y: bottom))
+    path.closeSubpath()
+    return path
+}
+
+/// Jharokha's icon: a carved sandstone palace window on terracotta, its panes the tiles,
+/// the main one lit like a window with the sun behind it.
 func drawIcon(in ctx: CGContext) {
     // macOS icon grid: an 824 pt rounded square centred on the 1024 canvas.
     let body = CGRect(x: 100, y: 100, width: 824, height: 824)
     let corner: CGFloat = 186
+    let space = CGColorSpaceCreateDeviceRGB()
 
-    // Soft drop shadow under the tile.
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: NSColor.black.withAlphaComponent(0.35).cgColor)
     ctx.addPath(CGPath(roundedRect: body, cornerWidth: corner, cornerHeight: corner, transform: nil))
@@ -17,93 +36,93 @@ func drawIcon(in ctx: CGContext) {
     ctx.fillPath()
     ctx.restoreGState()
 
-    // Background: deep indigo to violet.
+    // Terracotta, like the walls of a Rajasthani haveli.
     ctx.saveGState()
     ctx.addPath(CGPath(roundedRect: body, cornerWidth: corner, cornerHeight: corner, transform: nil))
     ctx.clip()
-    let background = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [
-        NSColor(calibratedRed: 0.36, green: 0.27, blue: 0.95, alpha: 1).cgColor,
-        NSColor(calibratedRed: 0.17, green: 0.12, blue: 0.52, alpha: 1).cgColor,
-    ] as CFArray, locations: [0, 1])!
-    ctx.drawLinearGradient(background, start: CGPoint(x: body.minX, y: body.maxY), end: CGPoint(x: body.maxX, y: body.minY), options: [])
-    // A gentle glow from the top-left.
-    let glow = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [
-        NSColor(calibratedRed: 0.75, green: 0.6, blue: 1, alpha: 0.55).cgColor,
-        NSColor(calibratedRed: 0.75, green: 0.6, blue: 1, alpha: 0).cgColor,
-    ] as CFArray, locations: [0, 1])!
-    ctx.drawRadialGradient(glow, startCenter: CGPoint(x: body.minX + 180, y: body.maxY - 160), startRadius: 0,
-                           endCenter: CGPoint(x: body.minX + 180, y: body.maxY - 160), endRadius: 620, options: [])
+    let wall = CGGradient(colorsSpace: space, colors: [color(0xE55A33), color(0x9C2E18)] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(wall, start: CGPoint(x: body.minX, y: body.maxY), end: CGPoint(x: body.maxX, y: body.minY), options: [])
+    // A faint jaali of small rings across the wall.
+    ctx.setStrokeColor(color(0xFFE2C4, 0.06))
+    ctx.setLineWidth(5)
+    var y = body.minY + 20
+    var row = 0
+    while y < body.maxY {
+        var x = body.minX + (row % 2 == 0 ? 20 : 56)
+        while x < body.maxX {
+            ctx.strokeEllipse(in: CGRect(x: x - 22, y: y - 22, width: 44, height: 44))
+            x += 72
+        }
+        y += 62
+        row += 1
+    }
+    let glow = CGGradient(colorsSpace: space, colors: [color(0xFFB27A, 0.45), color(0xFFB27A, 0)] as CFArray, locations: [0, 1])!
+    ctx.drawRadialGradient(glow, startCenter: CGPoint(x: 512, y: 560), startRadius: 0,
+                           endCenter: CGPoint(x: 512, y: 560), endRadius: 470, options: [])
 
-    // Three panes in the Side layout: one large, two stacked.
-    let inset: CGFloat = 132, gap: CGFloat = 40
-    let area = body.insetBy(dx: inset, dy: inset)
-    let mainWidth = (area.width - gap) * 0.56
-    let main = CGRect(x: area.minX, y: area.minY, width: mainWidth, height: area.height)
-    let sideX = main.maxX + gap, sideWidth = area.maxX - sideX
-    let half = (area.height - gap) / 2
-    let top = CGRect(x: sideX, y: area.minY + half + gap, width: sideWidth, height: half)
-    let bottom = CGRect(x: sideX, y: area.minY, width: sideWidth, height: half)
-
-    func pane(_ rect: CGRect, strength: CGFloat, active: Bool = false) {
-        let radius: CGFloat = 52
-        let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-        if active {
-            // The active window's glow, as Pane's highlight draws it.
+    let sandstone = CGGradient(colorsSpace: space, colors: [color(0xFFF1DC), color(0xEBCFA8)] as CFArray, locations: [0, 1])!
+    func fillSandstone(_ path: CGPath, shadow: Bool = true) {
+        if shadow {
             ctx.saveGState()
-            ctx.setShadow(offset: .zero, blur: 46, color: NSColor(calibratedRed: 0.45, green: 0.9, blue: 1, alpha: 0.9).cgColor)
+            ctx.setShadow(offset: CGSize(width: 0, height: -14), blur: 26, color: color(0x4A1208, 0.45))
             ctx.addPath(path)
-            ctx.setStrokeColor(NSColor(calibratedRed: 0.55, green: 0.93, blue: 1, alpha: 1).cgColor)
-            ctx.setLineWidth(10)
-            ctx.strokePath()
+            ctx.setFillColor(color(0xF3DEC0))
+            ctx.fillPath()
             ctx.restoreGState()
         }
         ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 24, color: NSColor.black.withAlphaComponent(0.28).cgColor)
-        ctx.addPath(path)
-        ctx.setFillColor(NSColor.white.withAlphaComponent(0.14 * strength).cgColor)
-        ctx.fillPath()
-        ctx.restoreGState()
-        // Frosted glass: lighter at the top.
-        ctx.saveGState()
         ctx.addPath(path)
         ctx.clip()
-        let frost = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [
-            NSColor.white.withAlphaComponent(0.95 * strength).cgColor,
-            NSColor.white.withAlphaComponent(0.62 * strength).cgColor,
-        ] as CFArray, locations: [0, 1])!
-        ctx.drawLinearGradient(frost, start: CGPoint(x: rect.midX, y: rect.maxY), end: CGPoint(x: rect.midX, y: rect.minY), options: [])
-        // A title bar with the three window controls.
-        ctx.setFillColor(NSColor(calibratedRed: 0.36, green: 0.27, blue: 0.95, alpha: 0.14).cgColor)
-        ctx.fill(CGRect(x: rect.minX, y: rect.maxY - 60, width: rect.width, height: 60))
-        let colors: [NSColor] = active
-            ? [NSColor(calibratedRed: 1, green: 0.37, blue: 0.34, alpha: 1), NSColor(calibratedRed: 1, green: 0.74, blue: 0.18, alpha: 1),
-               NSColor(calibratedRed: 0.16, green: 0.79, blue: 0.27, alpha: 1)]
-            : Array(repeating: NSColor(calibratedRed: 0.36, green: 0.27, blue: 0.95, alpha: 0.35), count: 3)
-        for (i, color) in colors.enumerated() {
-            ctx.setFillColor(color.cgColor)
-            ctx.fillEllipse(in: CGRect(x: rect.minX + 30 + CGFloat(i) * 30, y: rect.maxY - 41, width: 21, height: 21))
-        }
+        let box = path.boundingBox
+        ctx.drawLinearGradient(sandstone, start: CGPoint(x: box.midX, y: box.maxY), end: CGPoint(x: box.midX, y: box.minY), options: [])
         ctx.restoreGState()
-        // Fine edge highlight.
-        ctx.addPath(path)
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.7).cgColor)
-        ctx.setLineWidth(3)
-        ctx.strokePath()
     }
-    pane(bottom, strength: 0.8)
-    pane(top, strength: 0.88)
-    pane(main, strength: 1, active: true)
 
-    // Glassy sheen across the top of the tile.
-    let sheen = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [
-        NSColor.white.withAlphaComponent(0.18).cgColor, NSColor.white.withAlphaComponent(0).cgColor,
-    ] as CFArray, locations: [0, 1])!
-    ctx.drawLinearGradient(sheen, start: CGPoint(x: body.midX, y: body.maxY), end: CGPoint(x: body.midX, y: body.midY + 60), options: [])
+    // The balcony ledge, then the arched frame standing on it.
+    let ledge = CGPath(roundedRect: CGRect(x: 236, y: 206, width: 552, height: 58), cornerWidth: 22, cornerHeight: 22, transform: nil)
+    fillSandstone(ledge)
+    let frame = archPath(minX: 276, maxX: 748, bottom: 256, springLine: 540)
+    fillSandstone(frame)
+    // The finial on top of the arch.
+    fillSandstone(CGPath(ellipseIn: CGRect(x: 488, y: 758, width: 48, height: 48), transform: nil))
+
+    // The opening, divided into panes like the layout: one large, two stacked.
+    let opening = archPath(minX: 316, maxX: 708, bottom: 292, springLine: 540)
+    ctx.saveGState()
+    ctx.addPath(opening)
+    ctx.clip()
+    ctx.setFillColor(color(0x7A2412))
+    ctx.fill(opening.boundingBox)
+    let gap: CGFloat = 26
+    let split = 316 + (392 - gap) * 0.56
+    let main = CGRect(x: 316, y: 292, width: split - 316, height: 470)
+    let side = CGRect(x: split + gap, y: 292, width: 708 - split - gap, height: 470)
+    let lower = CGRect(x: side.minX, y: side.minY, width: side.width, height: 210)
+    let upper = CGRect(x: side.minX, y: lower.maxY + gap, width: side.width, height: side.maxY - lower.maxY - gap)
+    // The main pane glows with sunlight; the others are softer.
+    let sun = CGGradient(colorsSpace: space, colors: [color(0xFFE7A8), color(0xFFB04F)] as CFArray, locations: [0, 1])!
+    ctx.saveGState()
+    ctx.clip(to: main)
+    ctx.drawLinearGradient(sun, start: CGPoint(x: main.midX, y: main.maxY), end: CGPoint(x: main.midX, y: main.minY), options: [])
+    ctx.restoreGState()
+    for (rect, alpha) in [(upper, 0.92), (lower, 0.78)] {
+        ctx.setFillColor(color(0xFFE9CF, alpha))
+        ctx.fill(rect)
+    }
+    ctx.restoreGState()
+    // A fine carved edge around the opening.
+    ctx.addPath(opening)
+    ctx.setStrokeColor(color(0xC9A27A))
+    ctx.setLineWidth(6)
+    ctx.strokePath()
+
+    // Soft light across the top of the tile.
+    let sheen = CGGradient(colorsSpace: space, colors: [color(0xFFFFFF, 0.16), color(0xFFFFFF, 0)] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(sheen, start: CGPoint(x: body.midX, y: body.maxY), end: CGPoint(x: body.midX, y: body.midY + 80), options: [])
     ctx.restoreGState()
 
-    // Hairline rim.
     ctx.addPath(CGPath(roundedRect: body.insetBy(dx: 1.5, dy: 1.5), cornerWidth: corner, cornerHeight: corner, transform: nil))
-    ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.22).cgColor)
+    ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.2).cgColor)
     ctx.setLineWidth(3)
     ctx.strokePath()
 }

@@ -36,38 +36,44 @@ enum MenuIcons {
 
     /// An SF Symbol redrawn into a plain template image: this macOS drops symbol images
     /// from menu items, while drawn images (like the layout icons) show.
-    /// The menu bar glyph: the app icon's three panes (Side layout). Solid while tiling,
-    /// outlined when paused or waiting for access.
-    /// The menu bar glyph: filled panes, outlined when paused, with a dot while a mode
-    /// (Focus, No Peek, Privacy) is on, so it isn't forgotten.
+    /// The menu bar glyph: Jharokha's arched window with tiled panes, outlined when paused,
+    /// with a dot while a mode (Focus, No Peek, Privacy) is on, so it isn't forgotten.
     static func statusGlyph(paused: Bool, modeOn: Bool = false) -> NSImage {
-        let image = NSImage(size: NSSize(width: modeOn ? 24 : 19, height: 15), flipped: true) { bounds in
+        let image = NSImage(size: NSSize(width: modeOn ? 20 : 16, height: 16), flipped: true) { bounds in
+            NSColor.black.set()
             if modeOn {
-                NSColor.black.set()
                 NSBezierPath(ovalIn: CGRect(x: bounds.maxX - 4.5, y: 0.5, width: 4.5, height: 4.5)).fill()
             }
-            let area = CGRect(x: 0, y: 0, width: 19, height: 15).insetBy(dx: 1, dy: 1)
-            let gap: CGFloat = 1.6
-            let mainWidth = ((area.width - gap) * 0.56).rounded()
-            let main = CGRect(x: area.minX, y: area.minY, width: mainWidth, height: area.height)
-            let sideX = main.maxX + gap
-            let half = (area.height - gap) / 2
-            let panes = [
-                main,
-                CGRect(x: sideX, y: area.minY, width: area.maxX - sideX, height: half),
-                CGRect(x: sideX, y: area.minY + half + gap, width: area.maxX - sideX, height: half),
-            ]
-            NSColor.black.set()
-            for (index, pane) in panes.enumerated() {
-                // Small panes need tighter corners or they read as circles.
-                let radius: CGFloat = index == 0 ? 2.2 : 1.4
-                if paused {
-                    let path = NSBezierPath(roundedRect: pane.insetBy(dx: 0.6, dy: 0.6), xRadius: radius - 0.4, yRadius: radius - 0.4)
-                    path.lineWidth = 1.2
-                    path.stroke()
-                } else {
-                    NSBezierPath(roundedRect: pane, xRadius: radius, yRadius: radius).fill()
-                }
+            // The arch: straight sides, a round top.
+            let frame = CGRect(x: 1.5, y: 1, width: 13, height: 14.5)
+            let radius = frame.width / 2
+            let arch = NSBezierPath()
+            arch.move(to: CGPoint(x: frame.minX, y: frame.maxY))
+            arch.line(to: CGPoint(x: frame.minX, y: frame.minY + radius))
+            arch.appendArc(withCenter: CGPoint(x: frame.midX, y: frame.minY + radius), radius: radius,
+                           startAngle: 180, endAngle: 0, clockwise: false)
+            arch.line(to: CGPoint(x: frame.maxX, y: frame.maxY))
+            arch.close()
+            let gap: CGFloat = 1.4
+            let split = frame.minX + (frame.width - gap) * 0.55
+            let rowSplit = frame.minY + frame.height * 0.55
+            if paused {
+                arch.lineWidth = 1.2
+                arch.stroke()
+                let bars = NSBezierPath()
+                bars.move(to: CGPoint(x: split + gap / 2, y: frame.minY))
+                bars.line(to: CGPoint(x: split + gap / 2, y: frame.maxY))
+                bars.move(to: CGPoint(x: split + gap / 2, y: rowSplit))
+                bars.line(to: CGPoint(x: frame.maxX, y: rowSplit))
+                bars.lineWidth = 1.2
+                bars.stroke()
+            } else {
+                NSGraphicsContext.saveGraphicsState()
+                arch.addClip()
+                CGRect(x: frame.minX, y: frame.minY, width: split - frame.minX, height: frame.height).fill()
+                CGRect(x: split + gap, y: frame.minY, width: frame.maxX - split - gap, height: rowSplit - frame.minY - gap / 2).fill()
+                CGRect(x: split + gap, y: rowSplit + gap / 2, width: frame.maxX - split - gap, height: frame.maxY - rowSplit - gap / 2).fill()
+                NSGraphicsContext.restoreGraphicsState()
             }
             return true
         }
