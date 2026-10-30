@@ -87,31 +87,93 @@ enum MenuIcons {
 }
 
 /// The top of the menu: what Pane is doing and a live miniature of the current screen,
-/// with each tile's app icon.
+/// with each tile's app icon. Click a tile to select its window (the menu stays open, so
+/// Focus Mode and the app switch act on it); double-click to switch to it.
 final class LayoutPreviewView: NSView {
     struct Tile {
+        let window: CGWindowID
         let rect: CGRect   // normalized to 0...1 within the screen
         let icon: NSImage?
         let isActive: Bool
         let isStacked: Bool
+        let isZoomed: Bool
     }
+
+    /// A tile was clicked once: it is now the selection.
+    var onSelect: ((CGWindowID) -> Void)?
+    /// A tile was double-clicked: switch to that window.
+    var onActivate: ((CGWindowID) -> Void)?
 
     private let title: String
     private let tiles: [Tile]
     private let aspect: CGFloat
+    private(set) var selected: Int?
+    private var hovered: Int?
 
     init(title: String, tiles: [Tile], screenAspect: CGFloat) {
         self.title = title
         self.tiles = tiles
         self.aspect = min(max(screenAspect, 0.5), 3)
-        let width: CGFloat = 260
-        let previewHeight = min((width - 28) / self.aspect, 150)
-        super.init(frame: NSRect(x: 0, y: 0, width: width, height: previewHeight + 40))
+        selected = tiles.firstIndex(where: \.isActive)
+        let width: CGFloat = 280
+        let previewHeight = min((width - 28) / self.aspect, 160)
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: previewHeight + (tiles.isEmpty ? 40 : 58)))
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways],
+                                       owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) { setHovered(tile(at: event)) }
+    override func mouseExited(with event: NSEvent) { setHovered(nil) }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let index = tile(at: event) else { return }
+        if event.clickCount >= 2 {
+            onActivate?(tiles[index].window)
+            enclosingMenuItem?.menu?.cancelTracking()
+            return
+        }
+        selected = index
+        needsDisplay = true
+        onSelect?(tiles[index].window)
+    }
+
+    private func setHovered(_ index: Int?) {
+        guard index != hovered else { return }
+        hovered = index
+        needsDisplay = true
+    }
+
+    private func tile(at event: NSEvent) -> Int? {
+        let point = convert(event.locationInWindow, from: nil)
+        return tileRects().firstIndex { $0.contains(point) }
+    }
+
+    private var screenRect: CGRect {
+        let hintSpace: CGFloat = tiles.isEmpty ? 0 : 18
+        let available = CGRect(x: 14, y: 28, width: bounds.width - 28, height: bounds.height - 36 - hintSpace)
+        let width = min(available.width, available.height * aspect)
+        return CGRect(x: available.minX + (available.width - width) / 2, y: available.minY,
+                      width: width, height: width / aspect)
+    }
+
+    private func tileRects() -> [CGRect] {
+        let screen = screenRect
+        return tiles.map { tile in
+            CGRect(x: screen.minX + tile.rect.minX * screen.width, y: screen.minY + tile.rect.minY * screen.height,
+                   width: tile.rect.width * screen.width, height: tile.rect.height * screen.height)
+                .insetBy(dx: 1.5, dy: 1.5)
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let titleAttributes: [NSAttributedString.Key: Any] = [
@@ -120,37 +182,34 @@ final class LayoutPreviewView: NSView {
         ]
         (title as NSString).draw(at: CGPoint(x: 14, y: 6), withAttributes: titleAttributes)
 
-        let available = CGRect(x: 14, y: 28, width: bounds.width - 28, height: bounds.height - 36)
-        let width = min(available.width, available.height * aspect)
-        let screen = CGRect(x: available.minX + (available.width - width) / 2, y: available.minY,
-                            width: width, height: width / aspect)
+        let screen = screenRect
         NSColor.quaternaryLabelColor.setFill()
         NSBezierPath(roundedRect: screen, xRadius: 6, yRadius: 6).fill()
 
+        let small: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor,
+        ]
         guard !tiles.isEmpty else {
             let empty = "No windows to tile" as NSString
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-            let size = empty.size(withAttributes: attributes)
-            empty.draw(at: CGPoint(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2),
-                       withAttributes: attributes)
+            let size = empty.size(withAttributes: small)
+            empty.draw(at: CGPoint(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2), withAttributes: small)
             return
         }
 
         let accent = NSColor.controlAccentColor
-        for tile in tiles {
-            let rect = CGRect(x: screen.minX + tile.rect.minX * screen.width, y: screen.minY + tile.rect.minY * screen.height,
-                              width: tile.rect.width * screen.width, height: tile.rect.height * screen.height)
-                .insetBy(dx: 1.5, dy: 1.5)
+        for (index, (tile, rect)) in zip(tiles, tileRects()).enumerated() {
+            let isSelected = index == selected
             let path = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
-            (tile.isActive ? accent.withAlphaComponent(0.35) : NSColor.windowBackgroundColor.withAlphaComponent(0.9)).setFill()
+            let fill = isSelected ? accent.withAlphaComponent(0.35)
+                : index == hovered ? accent.withAlphaComponent(0.15)
+                : NSColor.windowBackgroundColor.withAlphaComponent(0.9)
+            fill.setFill()
             path.fill()
-            path.lineWidth = tile.isActive ? 2 : 1
-            (tile.isActive ? accent : NSColor.separatorColor).setStroke()
+            path.lineWidth = isSelected ? 2 : 1
+            (isSelected ? accent : index == hovered ? accent.withAlphaComponent(0.6) : NSColor.separatorColor).setStroke()
             path.stroke()
 
-            let side = min(28, rect.width - 6, rect.height - 6)
+            let side = min(30, rect.width - 6, rect.height - 6)
             if let icon = tile.icon, side > 8 {
                 icon.draw(in: CGRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side),
                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
@@ -162,6 +221,16 @@ final class LayoutPreviewView: NSView {
                     NSBezierPath(ovalIn: CGRect(x: rect.maxX - 12 + CGFloat(i) * 5, y: rect.minY + 4, width: 3.5, height: 3.5)).fill()
                 }
             }
+            if tile.isZoomed {
+                let badge: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 9, weight: .bold), .foregroundColor: accent,
+                ]
+                ("FOCUS" as NSString).draw(at: CGPoint(x: rect.minX + 5, y: rect.minY + 3), withAttributes: badge)
+            }
         }
+
+        let hint = "Click to select · double-click to switch to it" as NSString
+        let size = hint.size(withAttributes: small)
+        hint.draw(at: CGPoint(x: screen.midX - size.width / 2, y: screen.maxY + 4), withAttributes: small)
     }
 }

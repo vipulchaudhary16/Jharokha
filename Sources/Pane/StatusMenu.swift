@@ -10,6 +10,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let settings = Settings.shared
     /// The app in front when the menu opened; the menu bar does not activate Pane, so this is the user's app.
     private var frontApp: NSRunningApplication?
+    /// A window picked by clicking its tile in the preview; Focus Mode and the app switch
+    /// act on it, and it becomes active when the menu closes.
+    private var selectedWindow: CGWindowID?
+    private var selectionChanged = false
+    /// Set by actions that already activate the selected window themselves.
+    private var selectionHandled = false
+    private weak var appItem: NSMenuItem?
+    private weak var focusItem: NSMenuItem?
+    private var appItemBundleID: String?
     private var display: Display?
 
     init(tiler: TilingManager) {
@@ -34,9 +43,23 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         display = tiler.targetDisplay()
         menu.removeAllItems()
 
+        selectedWindow = nil
+        selectionChanged = false
+        selectionHandled = false
         let preview = NSMenuItem()
-        preview.view = LayoutPreviewView(title: statusText, tiles: display.map(tiler.preview) ?? [],
-                                         screenAspect: display.map { $0.rect.width / $0.rect.height } ?? 1.6)
+        let previewView = LayoutPreviewView(title: statusText, tiles: display.map(tiler.preview) ?? [],
+                                            screenAspect: display.map { $0.rect.width / $0.rect.height } ?? 1.6)
+        previewView.onSelect = { [weak self] window in
+            guard let self else { return }
+            self.selectedWindow = window
+            self.selectionChanged = true
+            self.updateSelectionItems()
+        }
+        previewView.onActivate = { [weak self] window in
+            self?.selectionHandled = true
+            self?.tiler.activate(window: window)
+        }
+        preview.view = previewView
         menu.addItem(preview)
         if !AX.isUsable {
             menu.addItem(action("Grant Accessibility Access…", #selector(grantAccess),
@@ -117,25 +140,19 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                                 : "Each screen keeps its own layout and count"))
         menu.addItem(.separator())
 
-        if let app = frontApp, let bundleID = app.bundleIdentifier, app.processIdentifier != getpid() {
-            let name = app.localizedName ?? bundleID
-            let tiled = !settings.excludedBundleIDs.contains(bundleID)
-            let entry = toggle("Include \(name) in Tiling", on: tiled, #selector(toggleFrontApp))
-            entry.image = app.icon.map { icon in
-                let small = icon.copy() as! NSImage
-                small.size = NSSize(width: 16, height: 16)
-                return small
-            }
-            entry.subtitle = tiled ? "On: its windows are part of the layout"
-                                   : "Off: its windows are left where you put them"
+        if let app = frontApp, app.bundleIdentifier != nil, app.processIdentifier != getpid() {
+            let entry = toggle("", on: false, #selector(toggleFrontApp))
+            configureAppItem(entry, name: app.localizedName ?? app.bundleIdentifier!, bundleID: app.bundleIdentifier!, icon: app.icon)
+            appItem = entry
             menu.addItem(entry)
         }
         let focusOn = display.map(tiler.isFocusMode) ?? false
-        let focusItem = action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option],
-                               icon: "arrow.up.left.and.arrow.down.right",
-                               subtitle: focusOn ? "On: choose again to put every window back" : "Fill the screen with the active window")
-        focusItem.state = focusOn ? .on : .off
-        menu.addItem(focusItem)
+        let focus = action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option],
+                           icon: "arrow.up.left.and.arrow.down.right",
+                           subtitle: focusOn ? "On: choose again to put every window back" : "Fill the screen with the active window")
+        focus.state = focusOn ? .on : .off
+        focusItem = focus
+        menu.addItem(focus)
         menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes),
                             icon: "arrow.counterclockwise", subtitle: "Re-learn how small each app can get"))
         menu.addItem(.separator())
@@ -199,11 +216,53 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleFrontApp() {
-        guard let bundleID = frontApp?.bundleIdentifier else { return }
+        guard let bundleID = appItemBundleID else { return }
         tiler.setTiling(settings.excludedBundleIDs.contains(bundleID), forBundleID: bundleID)
     }
 
-    @objc private func focusMode() { tiler.toggleFocusMode() }
+    @objc private func focusMode() {
+        if let window = selectedWindow {
+            selectionHandled = true
+            tiler.toggleFocusMode(window: window)
+        } else {
+            tiler.toggleFocusMode()
+        }
+    }
+
+    /// Closing the menu after picking a tile makes that window active. Actions run after
+    /// the menu closes, so wait a moment to let one that handles the selection itself claim it.
+    func menuDidClose(_ menu: NSMenu) {
+        guard selectionChanged, let window = selectedWindow else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self, !self.selectionHandled, self.selectedWindow == window else { return }
+            self.tiler.activate(window: window)
+        }
+    }
+
+    private func updateSelectionItems() {
+        guard let window = selectedWindow, let app = tiler.appName(of: window) else { return }
+        if let appItem, let bundleID = app.bundleID {
+            let icon = tiler.appIcon(of: window)
+            configureAppItem(appItem, name: app.name, bundleID: bundleID, icon: icon)
+        }
+        if let focusItem, focusItem.state == .off {
+            focusItem.subtitle = "Fill the screen with \(app.name)"
+        }
+    }
+
+    private func configureAppItem(_ entry: NSMenuItem, name: String, bundleID: String, icon: NSImage?) {
+        let tiled = !settings.excludedBundleIDs.contains(bundleID)
+        appItemBundleID = bundleID
+        entry.title = "Include \(name) in Tiling"
+        entry.state = tiled ? .on : .off
+        entry.image = icon.map { icon in
+            let small = icon.copy() as! NSImage
+            small.size = NSSize(width: 16, height: 16)
+            return small
+        }
+        entry.subtitle = tiled ? "On: its windows are part of the layout"
+                               : "Off: its windows are left where you put them"
+    }
     @objc private func retile() { tiler.retile() }
     @objc private func forgetSizes() { tiler.forgetLearnedSizes() }
 

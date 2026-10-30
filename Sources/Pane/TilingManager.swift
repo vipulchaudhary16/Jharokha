@@ -464,12 +464,55 @@ final class TilingManager {
             Toast.show("Focus mode off")
         } else {
             guard let c = context() else { return }
-            focusMode[c.display.key] = c.window
-            apply(c.displays)
-            windows[c.window]?.focus()
-            Toast.show("Focus mode · ⌃⌥Z to put windows back")
+            enterFocusMode(c.window, on: c.display, displays)
         }
         onStateChange?()
+    }
+
+    /// Focus mode for a chosen window (e.g. a tile picked in the menu preview): zooms it,
+    /// switches the zoom to it if another window was zoomed, or turns focus mode off if it
+    /// already was the zoomed one.
+    func toggleFocusMode(window id: CGWindowID) {
+        guard canTile else { return }
+        let displays = Display.current()
+        guard let display = displays.first(where: { states[$0.key]?.contains(id) ?? false }) else { return }
+        if focusMode[display.key] == id {
+            focusMode[display.key] = nil
+            apply(displays)
+            windows[id]?.focus()
+            Toast.show("Focus mode off")
+        } else {
+            enterFocusMode(id, on: display, displays)
+        }
+        onStateChange?()
+    }
+
+    private func enterFocusMode(_ id: CGWindowID, on display: Display, _ displays: [Display]) {
+        states[display.key]?.show(id)
+        focusMode[display.key] = id
+        apply(displays)
+        windows[id]?.focus()
+        Toast.show("Focus mode · ⌃⌥Z to put windows back")
+    }
+
+    /// Makes a tiled window the active one, bringing it forward in its stack.
+    func activate(window id: CGWindowID) {
+        guard let window = windows[id] else { return }
+        let displays = Display.current()
+        if let display = displays.first(where: { states[$0.key]?.contains(id) ?? false }),
+           states[display.key]?.show(id) == true {
+            apply(displays)
+        }
+        window.focus()
+    }
+
+    func appIcon(of id: CGWindowID) -> NSImage? {
+        windows[id].flatMap { NSRunningApplication(processIdentifier: $0.pid)?.icon }
+    }
+
+    func appName(of id: CGWindowID) -> (name: String, bundleID: String?)? {
+        guard let window = windows[id], let app = NSRunningApplication(processIdentifier: window.pid) else { return nil }
+        return (app.localizedName ?? app.bundleIdentifier ?? "App", app.bundleIdentifier)
     }
 
     func isFocusMode(on display: Display) -> Bool { focusMode[display.key] != nil }
@@ -486,8 +529,9 @@ final class TilingManager {
             let normalized = CGRect(x: (r.minX - area.minX) / area.width, y: (r.minY - area.minY) / area.height,
                                     width: r.width / area.width, height: r.height / area.height)
             let icon = windows[tile.showing].flatMap { NSRunningApplication(processIdentifier: $0.pid)?.icon }
-            return .init(rect: normalized, icon: icon, isActive: tile.windows.contains { $0 == focused },
-                         isStacked: tile.isStacked)
+            return .init(window: tile.showing, rect: normalized, icon: icon,
+                         isActive: tile.windows.contains { $0 == focused }, isStacked: tile.isStacked,
+                         isZoomed: focusMode[display.key] == tile.showing)
         }
     }
 
