@@ -65,6 +65,7 @@ private struct GeneralSettings: View {
     @State private var quickActions = Settings.shared.showsQuickActions
     @State private var animate = Settings.shared.animatesWindows
     @State private var smart = Settings.shared.arrangesBySize
+    @State private var overlap = Settings.shared.overlapsWhenCrowded
     @State private var veil = Settings.shared.veilsResizing
     @State private var hoverFocus = Settings.shared.hoverFocus
     @State private var dim = Settings.shared.noPeekDim
@@ -91,6 +92,8 @@ private struct GeneralSettings: View {
                     .font(.callout).foregroundStyle(.secondary)
                 Toggle("Smart placement: windows that need more room get the bigger tiles", isOn: $smart)
                     .onChange(of: smart) { _, value in settings.arrangesBySize = value; if value { controller.onRearrange?() } }
+                Toggle("On small screens, overlap windows that can't shrink instead of stacking them", isOn: $overlap)
+                    .onChange(of: overlap) { _, value in settings.overlapsWhenCrowded = value; controller.onRearrange?() }
                 LabeledContent("Learned window sizes") {
                     Button("Forget") { controller.onForgetSizes?() }
                 }

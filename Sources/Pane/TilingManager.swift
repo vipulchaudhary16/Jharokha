@@ -543,6 +543,9 @@ final class TilingManager {
             }
             // A single window larger than the screen: let the app clamp it.
             guard state.tiles.count > 1 else { return frames(for: display, count: 1) }
+            // On a screen too small for every app's minimum, overlap a little rather than stack:
+            // each window keeps a tile, grown to its minimum and kept on screen.
+            if settings.overlapsWhenCrowded { return overlapping(display, minimums: minimums) }
             // Stack the two tiles whose merge lets the rest fit, preferring the biggest windows
             // together (they're the ones that can't share the screen), so everything else keeps a tile.
             func area(_ size: CGSize) -> CGFloat { size.width * size.height }
@@ -559,6 +562,19 @@ final class TilingManager {
             solvedCapacity[display.key] = state.tiles.count
             // Merging must not bury the window you're using.
             if let focused = lastFocused { state.show(focused) }
+        }
+    }
+
+    /// The layout's tiles, each grown to its minimum size and moved back inside the screen.
+    private func overlapping(_ display: Display, minimums: [CGSize]) -> [CGRect] {
+        let area = display.rect.insetBy(dx: settings.gap, dy: settings.gap)
+        return frames(for: display, count: minimums.count).enumerated().map { index, tile in
+            let minimum = minimums[safe: index] ?? .zero
+            let size = CGSize(width: min(max(tile.width, minimum.width), area.width),
+                              height: min(max(tile.height, minimum.height), area.height))
+            let origin = CGPoint(x: max(area.minX, min(tile.minX, area.maxX - size.width)),
+                                 y: max(area.minY, min(tile.minY, area.maxY - size.height)))
+            return CGRect(origin: origin, size: size).integral
         }
     }
 

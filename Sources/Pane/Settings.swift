@@ -100,6 +100,12 @@ final class Settings {
     }
 
     /// Give the biggest tiles to the windows that need the most room.
+    /// When apps' minimum sizes don't fit a screen, overlap them slightly instead of stacking.
+    var overlapsWhenCrowded: Bool {
+        get { defaults.object(forKey: "overlapsWhenCrowded") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "overlapsWhenCrowded") }
+    }
+
     var arrangesBySize: Bool {
         get { defaults.object(forKey: "arrangesBySize") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "arrangesBySize") }
