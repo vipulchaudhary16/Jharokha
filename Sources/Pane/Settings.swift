@@ -93,6 +93,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "showsQuickActions") }
     }
 
+    /// Windows glide into their tiles instead of jumping.
+    var animatesWindows: Bool {
+        get { defaults.object(forKey: "animatesWindows") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "animatesWindows") }
+    }
+
     /// Activate a tiled window when the pointer rests on it.
     var hoverFocus: Bool {
         get { defaults.object(forKey: "hoverFocus") as? Bool ?? false }

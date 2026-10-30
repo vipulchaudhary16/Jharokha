@@ -18,6 +18,33 @@ final class WindowChrome {
 
     init(tiler: TilingManager) {
         self.tiler = tiler
+        // Borders ride along with windows while they glide into place.
+        tiler.animator.onTick = { [weak self] frames in self?.follow(frames) }
+    }
+
+    private static let fade: TimeInterval = 0.18
+
+    private func fadeIn(_ panel: NSPanel) {
+        guard panel.alphaValue < 1 || !panel.isVisible else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.fade
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    private func fadeOut(_ panel: NSPanel) {
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Self.fade
+            panel.animator().alphaValue = 0
+        }, completionHandler: { panel.orderOut(nil) })
+    }
+
+    private func follow(_ frames: [CGWindowID: CGRect]) {
+        guard !hidden else { return }
+        for (id, frame) in frames {
+            guard let panel = borders[id], let view = panel.contentView as? BorderView else { continue }
+            panel.setFrame(Self.nsRect(frame).insetBy(dx: -view.inset, dy: -view.inset), display: true)
+        }
     }
 
     // MARK: - Updates
@@ -26,8 +53,15 @@ final class WindowChrome {
         guard !hidden else { return }
         let tiles = tiler.chromeTiles()
         updateBorders(tiles)
-        updateGrip(tiles)
-        updateDots(tiles)
+        // The grip and dots wait for windows to settle, then fade in where they landed.
+        if tiler.animator.isRunning {
+            grip.map { fadeOut($0.panel) }
+            hideBar()
+            dots.values.forEach { fadeOut($0.panel) }
+        } else {
+            updateGrip(tiles)
+            updateDots(tiles)
+        }
         updateHoverMonitor()
     }
 
@@ -51,14 +85,16 @@ final class WindowChrome {
         let wanted = tiles.filter { style == .allBorders || ((style == .activeBorder || style == .glow) && $0.isActive) }
         let ids = Set(wanted.map(\.showing))
         for (id, panel) in borders where !ids.contains(id) {
-            panel.orderOut(nil)
+            fadeOut(panel)
             borders[id] = nil
         }
         let color = settings.highlightColor.color
         for tile in wanted {
             let glow = style == .glow
             let pad: CGFloat = glow ? 22 : 4
+            let isNew = borders[tile.showing] == nil
             let panel = borders[tile.showing] ?? Self.overlayPanel(clickThrough: true)
+            if isNew { panel.alphaValue = 0 }
             borders[tile.showing] = panel
             let view = (panel.contentView as? BorderView) ?? BorderView()
             view.color = color
@@ -66,9 +102,13 @@ final class WindowChrome {
             view.isActive = tile.isActive
             view.inset = pad
             panel.contentView = view
-            panel.setFrame(Self.nsRect(tile.rect).insetBy(dx: -pad, dy: -pad), display: true)
+            // A gliding window's border is moved by `follow`; otherwise it sits on the tile.
+            if tiler.animator.target(of: tile.showing) == nil {
+                panel.setFrame(Self.nsRect(tile.rect).insetBy(dx: -pad, dy: -pad), display: true)
+            }
             // Just above its own window, so other windows that cover it also cover the border.
             panel.order(.above, relativeTo: Int(tile.showing))
+            fadeIn(panel)
         }
     }
 
@@ -90,8 +130,11 @@ final class WindowChrome {
         // Centered on the window's top edge, in the gap above it.
         let frame = NSRect(x: rect.midX - size.width / 2, y: rect.maxY + max(settings.gap / 2, 3) - size.height / 2,
                            width: size.width, height: size.height)
+        let wasHidden = !entry.panel.isVisible || entry.panel.alphaValue < 1
+        if wasHidden { entry.panel.alphaValue = 0 }
         entry.panel.setFrame(frame, display: true)
         entry.panel.order(.above, relativeTo: Int(active.showing))
+        fadeIn(entry.panel)
         if let bar, bar.panel.isVisible { showBar(for: active) }
     }
 
@@ -180,7 +223,7 @@ final class WindowChrome {
         let stacked = tiles.filter { $0.windows.count > 1 && !($0.isActive && settings.showsQuickActions) }
         let ids = Set(stacked.map(\.showing))
         for (id, entry) in dots where !ids.contains(id) {
-            entry.panel.orderOut(nil)
+            fadeOut(entry.panel)
             dots[id] = nil
         }
         for tile in stacked {
@@ -196,9 +239,11 @@ final class WindowChrome {
             entry.view.showing = tile.showing
             let size = entry.view.intrinsicSize
             let rect = Self.nsRect(tile.rect)
+            if !entry.panel.isVisible { entry.panel.alphaValue = 0 }
             entry.panel.setFrame(NSRect(x: rect.midX - size.width / 2, y: rect.maxY + max(settings.gap / 2, 3) - size.height / 2,
                                         width: size.width, height: size.height), display: true)
             entry.panel.order(.above, relativeTo: Int(tile.showing))
+            fadeIn(entry.panel)
         }
     }
 

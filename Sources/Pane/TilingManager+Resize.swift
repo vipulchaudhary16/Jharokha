@@ -47,7 +47,7 @@ extension TilingManager {
         let base = splitWeights
         splitWeights[weightsKey(display, count: states[display.key]?.tiles.count ?? 0)] =
             resizeWeights(display: display, tile: tile, to: frame)
-        apply([display], excluding: current.id)
+        apply([display], excluding: [current.id], animated: false)
         // Live passes don't keep the provisional weights; the drop computes the final ones.
         splitWeights = base
     }

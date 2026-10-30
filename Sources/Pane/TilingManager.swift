@@ -49,6 +49,8 @@ final class TilingManager {
     var onLayoutChange: (() -> Void)?
     /// Called when a drag or resize starts (true) and ends (false).
     var onDragChange: ((Bool) -> Void)?
+    private var missingSince: [CGWindowID: Date] = [:]
+    let animator = WindowAnimator()
     private var healthTimer: Timer?
     /// Whether macOS currently accepts Pane's Accessibility calls.
     private(set) var accessUsable = true
@@ -69,6 +71,8 @@ final class TilingManager {
         // An unresponsive app must not stall the tiler for the default 6 seconds.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
         observer.onChange = { [weak self] change in self?.handle(change) }
+        // Pane's own animation moves windows constantly; check the layout once they settle.
+        animator.onIdle = { [weak self] in self?.scheduleRefresh(after: 0.05) }
         observer.start()
         isPausedForStageManager = Self.isStageManagerOn
         accessUsable = AX.isUsable
@@ -89,6 +93,7 @@ final class TilingManager {
             // New windows often settle their role, size and position a moment after creation.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.refresh() }
         case .movedOrResized:
+            if animator.isRunning && !Self.isMouseDown { return }
             if Self.isMouseDown {
                 windowMovedDuringPress = true
                 beginDragWatch()
@@ -256,10 +261,18 @@ final class TilingManager {
         // Modes like No peek follow focus even while tiling is off.
         guard canTile else { onLayoutChange?(); return }
         guard !Self.isMouseDown else { beginDragWatch(); return }
+        // Mission Control and App Exposé show windows as thumbnails and report most of them
+        // as off screen; tiling then would collapse the layout. Wait until it closes.
+        guard !Self.isMissionControlActive else {
+            scheduleRefresh(after: 0.4)
+            return
+        }
 
         let displays = Display.current()
         let (found, frontToBack) = enumerateWindows()
+        let previous = windows
         windows = Dictionary(found.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let transient = keepBrieflyMissingWindows(previous: previous, displays: displays)
         // Windows discovered together (e.g. at launch) are ordered front to back, so the
         // frontmost window becomes primary.
         let newWindows = found.map(\.id).filter { firstSeen[$0] == nil }
@@ -278,6 +291,8 @@ final class TilingManager {
             groups[display.key, default: []].append(window.id)
         }
 
+        for (key, ids) in transient { groups[key, default: []].append(contentsOf: ids) }
+
         for display in displays {
             var state = states[display.key] ?? ScreenTiles()
             let present = (groups[display.key] ?? []).sorted { firstSeen[$0, default: 0] < firstSeen[$1, default: 0] }
@@ -290,8 +305,55 @@ final class TilingManager {
         }
         if let focused, windows[focused] != nil, !floating.contains(focused) { lastFocused = focused }
 
-        apply(displays)
+        // Windows that are only briefly missing keep their tile but aren't moved.
+        apply(displays, excluding: Set(transient.values.joined()))
         onStateChange?()
+    }
+
+    /// A tiled window can vanish from the on-screen list for a moment (a Space switching,
+    /// Exposé, an app redrawing) while it still exists. Keep its tile for a grace period
+    /// instead of reflowing everything; a window that is closed, minimized or hidden goes at once.
+    private func keepBrieflyMissingWindows(previous: [CGWindowID: AXWindow], displays: [Display]) -> [String: [CGWindowID]] {
+        let now = Date()
+        var kept: [String: [CGWindowID]] = [:]
+        for display in displays {
+            guard let state = states[display.key] else { continue }
+            for id in state.allWindows where windows[id] == nil {
+                guard let window = previous[id],
+                      window.element.value(kAXRoleAttribute) as String? != nil,   // still exists
+                      !window.isMinimized,
+                      let app = NSRunningApplication(processIdentifier: window.pid), !app.isHidden, !app.isTerminated
+                else {
+                    missingSince[id] = nil
+                    continue
+                }
+                let since = missingSince[id] ?? now
+                missingSince[id] = since
+                guard now.timeIntervalSince(since) < 1.5 else { continue }
+                windows[id] = window
+                kept[display.key, default: []].append(id)
+            }
+        }
+        for id in missingSince.keys where windows[id] != nil && !kept.values.contains(where: { $0.contains(id) }) {
+            missingSince[id] = nil
+        }
+        if !kept.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in self?.scheduleRefresh(after: 0) }
+        }
+        return kept
+    }
+
+    /// Mission Control, App Exposé and Launchpad are full-screen layers owned by the Dock.
+    static var isMissionControlActive: Bool {
+        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        let screens = NSScreen.screens.map(\.frame.size)
+        return info.contains { entry in
+            guard entry[kCGWindowOwnerName as String] as? String == "Dock",
+                  let layer = entry[kCGWindowLayer as String] as? Int, layer >= 18,
+                  let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat] else { return false }
+            let width = bounds["Width"] ?? 0, height = bounds["Height"] ?? 0
+            return screens.contains { width >= $0.width * 0.9 && height >= $0.height * 0.9 }
+        }
     }
 
     /// Tileable windows, plus each on-screen window's z-order (0 = frontmost).
@@ -332,16 +394,17 @@ final class TilingManager {
     /// Writes the layout of each display; windows already in place are left alone,
     /// so the move/resize events caused by these writes settle after one pass.
     /// A pass that learns a new minimum size is followed by another, which makes room for it.
-    func apply(_ displays: [Display], excluding excluded: CGWindowID? = nil) {
+    func apply(_ displays: [Display], excluding excluded: Set<CGWindowID> = [], animated: Bool = true) {
         defer { onLayoutChange?() }
+        let animated = animated && settings.animatesWindows
         for _ in 0..<3 {
             minimumsChanged = false
-            displays.forEach { applyOnce($0, excluding: excluded) }
+            displays.forEach { applyOnce($0, excluding: excluded, animated: animated) }
             if !minimumsChanged { return }
         }
     }
 
-    private func applyOnce(_ display: Display, excluding excluded: CGWindowID?) {
+    private func applyOnce(_ display: Display, excluding excluded: Set<CGWindowID>, animated: Bool) {
         guard var state = states[display.key] else { return }
         let rects = solve(display, &state)
         states[display.key] = state
@@ -350,10 +413,13 @@ final class TilingManager {
         let full = display.rect.insetBy(dx: settings.gap, dy: settings.gap)
         for (index, tile) in state.tiles.enumerated() where rects.indices.contains(index) {
             // Stacked windows sit behind the showing one at the same size; place them first.
-            for id in tile.windows where id != tile.showing && id != excluded {
-                place(id, id == zoomed ? full : rects[index])
+            for id in tile.windows where id != tile.showing && !excluded.contains(id) {
+                // Hidden behind the showing window, so there is nothing to animate.
+                place(id, id == zoomed ? full : rects[index], animated: false)
             }
-            if tile.showing != excluded { place(tile.showing, tile.showing == zoomed ? full : rects[index]) }
+            if !excluded.contains(tile.showing) {
+                place(tile.showing, tile.showing == zoomed ? full : rects[index], animated: animated)
+            }
         }
     }
 
@@ -396,9 +462,11 @@ final class TilingManager {
         Toast.show("Tiling \(state.tiles.count) here: \(name) needs more room")
     }
 
-    private func place(_ id: CGWindowID, _ rect: CGRect) {
+    private func place(_ id: CGWindowID, _ rect: CGRect, animated: Bool) {
         guard let window = windows[id] else { return }
         targets[id] = rect
+        // Already gliding there: not a refusal, so it must not count as a write attempt.
+        if let flying = animator.target(of: id), flying.isClose(to: rect) { return }
         guard let frame = window.frame, !frame.isClose(to: rect) else {
             writes[id] = nil
             return
@@ -413,12 +481,26 @@ final class TilingManager {
             learnMinimum(id, accepted: frame, requested: rect)
             return
         }
-        window.setFrame(rect)
-        // Only a size that moved toward the request but stopped short is a minimum. A size that
-        // hasn't changed yet may just be an app that resizes a moment later (Notes, Electron apps);
-        // those are caught by the repeated-refusal check above once they settle.
-        if let accepted = window.frame, !accepted.size.isClose(to: frame.size) {
-            learnMinimum(id, accepted: accepted, requested: rect)
+        if animated {
+            animator.animate(window, to: rect) { [weak self] in self?.checkAccepted(id, requested: rect, before: frame) }
+        } else {
+            animator.cancel(id)
+            window.setFrame(rect)
+            checkAccepted(id, requested: rect, before: frame)
+        }
+    }
+
+    /// Only a size that moved toward the request but stopped short is a minimum. A size that
+    /// hasn't changed yet may just be an app that resizes a moment later (Notes, Electron apps);
+    /// those are caught by the repeated-refusal check in `place` once they settle.
+    private func checkAccepted(_ id: CGWindowID, requested: CGRect, before: CGRect) {
+        guard let accepted = windows[id]?.frame, !accepted.size.isClose(to: before.size) else { return }
+        let wasChanged = minimumsChanged
+        learnMinimum(id, accepted: accepted, requested: requested)
+        // Learned after an animation finished, outside an apply pass: make room now.
+        if minimumsChanged && !wasChanged && animator.isRunning == false {
+            minimumsChanged = false
+            apply(Display.current())
         }
     }
 

@@ -52,6 +52,7 @@ private struct GeneralSettings: View {
     @State private var highlight = Settings.shared.highlightStyle
     @State private var color = Settings.shared.highlightColor
     @State private var quickActions = Settings.shared.showsQuickActions
+    @State private var animate = Settings.shared.animatesWindows
     @State private var hoverFocus = Settings.shared.hoverFocus
     @State private var dim = Settings.shared.noPeekDim
     @State private var blur = Settings.shared.noPeekBlur
@@ -63,31 +64,33 @@ private struct GeneralSettings: View {
                 Picker("Style", selection: $highlight) {
                     ForEach(Settings.HighlightStyle.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
-                .onChange(of: highlight) { settings.highlightStyle = $0; onChange() }
+                .onChange(of: highlight) { _, value in settings.highlightStyle = value; onChange() }
                 Picker("Color", selection: $color) {
                     ForEach(Settings.HighlightColor.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
-                .onChange(of: color) { settings.highlightColor = $0; onChange() }
+                .onChange(of: color) { _, value in settings.highlightColor = value; onChange() }
             }
             Section("Windows") {
+                Toggle("Animate windows into place", isOn: $animate)
+                    .onChange(of: animate) { _, value in settings.animatesWindows = value; onChange() }
                 Toggle("Quick actions above the active window", isOn: $quickActions)
-                    .onChange(of: quickActions) { settings.showsQuickActions = $0; onChange() }
+                    .onChange(of: quickActions) { _, value in settings.showsQuickActions = value; onChange() }
                 Toggle("Activate windows on hover", isOn: $hoverFocus)
-                    .onChange(of: hoverFocus) { settings.hoverFocus = $0; onChange() }
+                    .onChange(of: hoverFocus) { _, value in settings.hoverFocus = value; onChange() }
             }
             Section("No peek") {
                 LabeledContent("Dim other windows") {
                     Slider(value: $dim, in: 0.1...0.9) { Text("\(Int(dim * 100))%") }
-                        .onChange(of: dim) { settings.noPeekDim = $0; onChange() }
+                        .onChange(of: dim) { _, value in settings.noPeekDim = value; onChange() }
                 }
                 Toggle("Blur other windows", isOn: $blur)
-                    .onChange(of: blur) { settings.noPeekBlur = $0; onChange() }
+                    .onChange(of: blur) { _, value in settings.noPeekBlur = value; onChange() }
             }
             Section("Clean Space") {
                 Picker("Background", selection: $background) {
                     ForEach(Settings.CleanSpaceBackground.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
-                .onChange(of: background) { settings.cleanSpaceBackground = $0; onChange() }
+                .onChange(of: background) { _, value in settings.cleanSpaceBackground = value; onChange() }
             }
         }
         .formStyle(.grouped)
@@ -104,7 +107,7 @@ private struct KeyboardSettings: View {
         Form {
             Section {
                 Toggle("Keyboard shortcuts", isOn: $enabled)
-                    .onChange(of: enabled) { store.areEnabled = $0; onChange(); version += 1 }
+                    .onChange(of: enabled) { _, value in store.areEnabled = value; onChange(); version += 1 }
                 Text("Click a shortcut and press new keys. ⌫ turns it off, ⎋ cancels.")
                     .font(.callout).foregroundStyle(.secondary)
             }
