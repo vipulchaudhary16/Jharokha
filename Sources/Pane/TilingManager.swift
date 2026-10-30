@@ -459,6 +459,23 @@ final class TilingManager {
 
     func isFocusMode(on display: Display) -> Bool { focusMode[display.key] != nil }
 
+    /// The tiles of a display as last applied, normalized to its usable area, for the menu preview.
+    func preview(of display: Display) -> [LayoutPreviewView.Tile] {
+        guard let state = states[display.key] else { return [] }
+        let rects = rects(for: display)
+        let focused = AX.focusedWindow()?.id ?? lastFocused
+        let area = display.rect
+        return state.tiles.enumerated().compactMap { index, tile in
+            guard rects.indices.contains(index) else { return nil }
+            let r = rects[index]
+            let normalized = CGRect(x: (r.minX - area.minX) / area.width, y: (r.minY - area.minY) / area.height,
+                                    width: r.width / area.width, height: r.height / area.height)
+            let icon = windows[tile.showing].flatMap { NSRunningApplication(processIdentifier: $0.pid)?.icon }
+            return .init(rect: normalized, icon: icon, isActive: tile.windows.contains { $0 == focused },
+                         isStacked: tile.isStacked)
+        }
+    }
+
     /// Puts every window back in its place and says whether anything had moved.
     /// Also re-attaches to every app and forgets refused writes, so it recovers tiling that
     /// stalled, e.g. after Accessibility access was re-granted while Pane was running.

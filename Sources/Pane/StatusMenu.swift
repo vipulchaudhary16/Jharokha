@@ -34,74 +34,120 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         display = tiler.targetDisplay()
         menu.removeAllItems()
 
-        menu.addItem(header(statusText))
+        let preview = NSMenuItem()
+        preview.view = LayoutPreviewView(title: statusText, tiles: display.map(tiler.preview) ?? [],
+                                         screenAspect: display.map { $0.rect.width / $0.rect.height } ?? 1.6)
+        menu.addItem(preview)
         if !AX.isUsable {
-            menu.addItem(action("Grant Accessibility Access…", #selector(grantAccess)))
+            menu.addItem(action("Grant Accessibility Access…", #selector(grantAccess),
+                                icon: "lock.shield", subtitle: "Pane needs it to move and resize windows"))
         }
-        menu.addItem(toggle("Automatic Tiling", on: settings.isTilingEnabled, #selector(toggleTiling)))
-        menu.addItem(action("Re-apply Tiling", #selector(retile), key: "r", modifiers: [.control, .option]))
+        menu.addItem(.separator())
+        menu.addItem(toggle("Automatic Tiling", on: settings.isTilingEnabled, #selector(toggleTiling),
+                            icon: "rectangle.split.2x2", subtitle: "Place windows as they open"))
+        menu.addItem(action("Re-apply Tiling", #selector(retile), key: "r", modifiers: [.control, .option],
+                            icon: "arrow.triangle.2.circlepath", subtitle: "Put every window back in its place"))
         menu.addItem(.separator())
 
+        let ratio = CGFloat(settings.mainRatio)
         if let display {
             let current = settings.layout(for: display)
             let shared = settings.appliesToAllScreens
+            let capacity = settings.capacity(for: display)
             menu.addItem(header(shared ? "Layout" : "Layout on This Screen"))
             for kind in LayoutKind.allCases {
                 let unavailable = display.shape == .vertical && kind == .columns
                 let entry = toggle(kind.title, on: current == kind, #selector(chooseLayout(_:)))
+                entry.image = MenuIcons.layout(kind, count: MenuIcons.characteristicCount(of: kind, shape: display.shape),
+                                               ratio: ratio, shape: display.shape)
+                entry.subtitle = unavailable ? "Not available on a vertical monitor" : Self.summary(of: kind)
                 entry.representedObject = kind.rawValue
                 entry.isEnabled = !unavailable
-                if unavailable { entry.toolTip = "Columns isn't available on a vertical monitor" }
-                entry.indentationLevel = 1
                 menu.addItem(entry)
             }
+            menu.addItem(.separator())
 
             let counts = NSMenu()
-            let capacity = settings.capacity(for: display)
             // A shared count is offered up to what the roomiest screen holds.
             let max = shared ? Display.current().map(settings.maxCount).max() ?? settings.maxCount(for: display)
                              : settings.maxCount(for: display)
             for n in 1...5 {
                 let entry = toggle(n == 1 ? "1 Window" : "\(n) Windows", on: n == capacity, #selector(chooseCount(_:)))
+                entry.image = MenuIcons.layout(current, count: min(n, LayoutEngine.maxCount(kind: current, shape: display.shape, size: display.rect.size)),
+                                               ratio: ratio, shape: display.shape)
                 entry.tag = n
                 entry.keyEquivalent = "\(n)"
                 entry.keyEquivalentModifierMask = [.control, .option, .command]
                 entry.isEnabled = n <= max
-                if n > max { entry.toolTip = "\(current.title) holds up to \(max) windows here" }
+                if n > max { entry.subtitle = "\(current.title) holds up to \(max) here" }
                 counts.addItem(entry)
             }
-            menu.addItem(submenu(shared ? "Windows per Screen: \(capacity)" : "Windows on This Screen: \(capacity)", counts))
-        }
+            let countItem = submenu(shared ? "Windows per Screen: \(capacity)" : "Windows on This Screen: \(capacity)", counts)
+            countItem.image = MenuIcons.layout(current, count: capacity, ratio: ratio, shape: display.shape)
+            countItem.subtitle = "More windows than this stack in the active tile"
+            menu.addItem(countItem)
 
-        let sizes = NSMenu()
-        for (title, ratio) in [("Half", 0.5), ("60%", 0.6), ("Two-thirds", 2.0 / 3.0)] {
-            let entry = toggle(title, on: abs(settings.mainRatio - ratio) < 0.01, #selector(chooseMainRatio(_:)))
-            entry.representedObject = ratio
-            sizes.addItem(entry)
+            let sizes = NSMenu()
+            for (title, value) in [("Half", 0.5), ("60%", 0.6), ("Two-thirds", 2.0 / 3.0)] {
+                let entry = toggle(title, on: abs(settings.mainRatio - value) < 0.01, #selector(chooseMainRatio(_:)))
+                entry.image = MenuIcons.layout(current == .rows ? .rows : .columns, count: 2, ratio: value, shape: display.shape)
+                entry.representedObject = value
+                sizes.addItem(entry)
+            }
+            let sizeItem = submenu("Main Window Size", sizes)
+            sizeItem.image = MenuIcons.layout(current == .rows ? .rows : .columns, count: 2, ratio: ratio, shape: display.shape)
+            sizeItem.subtitle = "How much room the first window gets"
+            menu.addItem(sizeItem)
         }
-        menu.addItem(submenu("Main Window Size", sizes))
 
         let gaps = NSMenu()
         for gap in [0, 4, 8, 12, 16] {
-            let entry = toggle("\(gap) pt", on: Int(settings.gap) == gap, #selector(chooseGap(_:)))
+            let entry = toggle(gap == 0 ? "None" : "\(gap) pt", on: Int(settings.gap) == gap, #selector(chooseGap(_:)))
+            entry.image = MenuIcons.spacing(CGFloat(gap))
             entry.tag = gap
             gaps.addItem(entry)
         }
-        menu.addItem(submenu("Spacing", gaps))
-        menu.addItem(toggle("Apply Changes to All Screens", on: settings.appliesToAllScreens, #selector(toggleAllScreens)))
+        let gapItem = submenu("Spacing: \(Int(settings.gap)) pt", gaps)
+        gapItem.image = MenuIcons.spacing(CGFloat(settings.gap))
+        gapItem.subtitle = "Gap between windows and screen edges"
+        menu.addItem(gapItem)
+        menu.addItem(toggle("Apply Changes to All Screens", on: settings.appliesToAllScreens, #selector(toggleAllScreens),
+                            icon: "display.2", subtitle: settings.appliesToAllScreens
+                                ? "Layout and count are shared by every screen"
+                                : "Each screen keeps its own layout and count"))
         menu.addItem(.separator())
 
         if let app = frontApp, let bundleID = app.bundleIdentifier, app.processIdentifier != getpid() {
             let name = app.localizedName ?? bundleID
-            menu.addItem(toggle("Tile \(name)", on: !settings.excludedBundleIDs.contains(bundleID), #selector(toggleFrontApp)))
+            let tiled = !settings.excludedBundleIDs.contains(bundleID)
+            let entry = toggle("Tile \(name)", on: tiled, #selector(toggleFrontApp))
+            entry.image = app.icon.map { icon in
+                let small = icon.copy() as! NSImage
+                small.size = NSSize(width: 16, height: 16)
+                return small
+            }
+            entry.subtitle = tiled ? "Its windows join the layout" : "Its windows stay where you put them"
+            menu.addItem(entry)
         }
-        menu.addItem(action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option]))
-        menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes)))
+        menu.addItem(action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option],
+                            icon: "arrow.up.left.and.arrow.down.right", subtitle: "Fill the screen with the active window"))
+        menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes),
+                            icon: "arrow.counterclockwise", subtitle: "Re-learn how small each app can get"))
         menu.addItem(.separator())
 
-        menu.addItem(toggle("Open at Login", on: SMAppService.mainApp.status == .enabled, #selector(toggleLogin)))
-        menu.addItem(action("Keyboard Shortcuts…", #selector(showShortcuts)))
-        menu.addItem(action("Quit Pane", #selector(quit), key: "q", modifiers: [.command]))
+        menu.addItem(toggle("Open at Login", on: SMAppService.mainApp.status == .enabled, #selector(toggleLogin),
+                            icon: "power"))
+        menu.addItem(action("Keyboard Shortcuts…", #selector(showShortcuts), icon: "keyboard"))
+        menu.addItem(action("Quit Pane", #selector(quit), key: "q", modifiers: [.command], icon: "xmark.circle"))
+    }
+
+    private static func summary(of kind: LayoutKind) -> String {
+        switch kind {
+        case .grid: return "Each new window takes half the newest space"
+        case .columns: return "Side by side, full height"
+        case .rows: return "Stacked top to bottom, full width"
+        case .side: return "One large window, the rest in a column"
+        }
     }
 
     private var statusText: String {
@@ -197,15 +243,18 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private func action(_ title: String, _ selector: Selector, key: String = "",
-                        modifiers: NSEvent.ModifierFlags = []) -> NSMenuItem {
+                        modifiers: NSEvent.ModifierFlags = [], icon: String? = nil, subtitle: String? = nil) -> NSMenuItem {
         let entry = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         entry.keyEquivalentModifierMask = modifiers
         entry.target = self
+        entry.image = icon.flatMap(MenuIcons.symbol)
+        entry.subtitle = subtitle
         return entry
     }
 
-    private func toggle(_ title: String, on: Bool, _ selector: Selector) -> NSMenuItem {
-        let entry = action(title, selector)
+    private func toggle(_ title: String, on: Bool, _ selector: Selector,
+                        icon: String? = nil, subtitle: String? = nil) -> NSMenuItem {
+        let entry = action(title, selector, icon: icon, subtitle: subtitle)
         entry.state = on ? .on : .off
         return entry
     }
