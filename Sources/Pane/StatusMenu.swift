@@ -16,8 +16,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var selectionChanged = false
     /// Set by actions that already activate the selected window themselves.
     private var selectionHandled = false
-    private weak var appItem: NSMenuItem?
-    private weak var focusItem: NSMenuItem?
+    private weak var appRow: SwitchRowView?
+    private weak var focusRow: SwitchRowView?
     private var appItemBundleID: String?
     private var display: Display?
 
@@ -66,8 +66,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                                 icon: "lock.shield", subtitle: "Pane needs it to move and resize windows"))
         }
         menu.addItem(.separator())
-        menu.addItem(toggle("Automatic Tiling", on: settings.isTilingEnabled, #selector(toggleTiling),
-                            icon: "rectangle.split.2x2", subtitle: "Place windows as they open"))
+        menu.addItem(switchItem("Automatic Tiling", subtitle: Self.tilingSubtitle(settings.isTilingEnabled),
+                                icon: MenuIcons.symbol("rectangle.split.2x2"), isOn: settings.isTilingEnabled) { [weak self] on in
+            self?.tiler.setTilingEnabled(on)
+            self?.updateIcon()
+            return Self.tilingSubtitle(on)
+        }.item)
         menu.addItem(action("Re-apply Tiling", #selector(retile), key: "r", modifiers: [.control, .option],
                             icon: "arrow.triangle.2.circlepath", subtitle: "Put every window back in its place"))
         menu.addItem(.separator())
@@ -134,33 +138,76 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         gapItem.image = MenuIcons.spacing(CGFloat(settings.gap))
         gapItem.subtitle = "Gap between windows and screen edges"
         menu.addItem(gapItem)
-        menu.addItem(toggle("Apply Changes to All Screens", on: settings.appliesToAllScreens, #selector(toggleAllScreens),
-                            icon: "display.2", subtitle: settings.appliesToAllScreens
-                                ? "Layout and count are shared by every screen"
-                                : "Each screen keeps its own layout and count"))
+        menu.addItem(switchItem("Apply Changes to All Screens", subtitle: Self.allScreensSubtitle(settings.appliesToAllScreens),
+                                icon: MenuIcons.symbol("display.2"), isOn: settings.appliesToAllScreens) { [weak self] on in
+            self?.settings.appliesToAllScreens = on
+            self?.tiler.relayout()
+            return Self.allScreensSubtitle(on)
+        }.item)
         menu.addItem(.separator())
 
-        if let app = frontApp, app.bundleIdentifier != nil, app.processIdentifier != getpid() {
-            let entry = toggle("", on: false, #selector(toggleFrontApp))
-            configureAppItem(entry, name: app.localizedName ?? app.bundleIdentifier!, bundleID: app.bundleIdentifier!, icon: app.icon)
-            appItem = entry
-            menu.addItem(entry)
+        if let app = frontApp, let bundleID = app.bundleIdentifier, app.processIdentifier != getpid() {
+            let (item, row) = switchItem("", subtitle: "", icon: nil, isOn: false) { [weak self] on in
+                guard let self, let bundleID = self.appItemBundleID else { return nil }
+                self.tiler.setTiling(on, forBundleID: bundleID)
+                return Self.appSubtitle(on)
+            }
+            configureAppRow(row, name: app.localizedName ?? bundleID, bundleID: bundleID, icon: app.icon)
+            appRow = row
+            menu.addItem(item)
         }
         let focusOn = display.map(tiler.isFocusMode) ?? false
-        let focus = action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option],
-                           icon: "arrow.up.left.and.arrow.down.right",
-                           subtitle: focusOn ? "On: choose again to put every window back" : "Fill the screen with the active window")
-        focus.state = focusOn ? .on : .off
-        focusItem = focus
-        menu.addItem(focus)
+        let (focusItem, row) = switchItem("Focus Mode", subtitle: Self.focusSubtitle(focusOn, app: nil),
+                                          icon: MenuIcons.symbol("arrow.up.left.and.arrow.down.right"), isOn: focusOn) { [weak self] _ in
+            guard let self else { return nil }
+            self.selectionHandled = true
+            if let window = self.selectedWindow {
+                self.tiler.toggleFocusMode(window: window)
+            } else {
+                self.tiler.toggleFocusMode()
+            }
+            // Show the real outcome: a window may not be tiled, or the zoom may have moved.
+            let on = self.display.map(self.tiler.isFocusMode) ?? false
+            self.focusRow?.isOn = on
+            return Self.focusSubtitle(on, app: nil)
+        }
+        focusRow = row
+        menu.addItem(focusItem)
         menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes),
                             icon: "arrow.counterclockwise", subtitle: "Re-learn how small each app can get"))
         menu.addItem(.separator())
 
-        menu.addItem(toggle("Open at Login", on: SMAppService.mainApp.status == .enabled, #selector(toggleLogin),
-                            icon: "power"))
+        let (loginItem, loginRow) = switchItem("Open at Login", subtitle: nil, icon: MenuIcons.symbol("power"),
+                                               isOn: SMAppService.mainApp.status == .enabled) { _ in nil }
+        loginRow.onChange = { [weak loginRow] on in
+            do {
+                if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+            loginRow?.isOn = SMAppService.mainApp.status == .enabled
+            return nil
+        }
+        menu.addItem(loginItem)
         menu.addItem(action("Keyboard Shortcuts…", #selector(showShortcuts), icon: "keyboard"))
         menu.addItem(action("Quit Pane", #selector(quit), key: "q", modifiers: [.command], icon: "xmark.circle"))
+    }
+
+    private static func tilingSubtitle(_ on: Bool) -> String {
+        on ? "Place windows as they open" : "Off: windows stay where you put them"
+    }
+
+    private static func allScreensSubtitle(_ on: Bool) -> String {
+        on ? "Layout and count are shared by every screen" : "Each screen keeps its own layout and count"
+    }
+
+    private static func appSubtitle(_ on: Bool) -> String {
+        on ? "Its windows are part of the layout" : "Its windows are left where you put them"
+    }
+
+    private static func focusSubtitle(_ on: Bool, app: String?) -> String {
+        if on { return "On: switch off to put every window back · ⌃⌥Z" }
+        return "Fill the screen with \(app ?? "the active window") · ⌃⌥Z"
     }
 
     private static func summary(of kind: LayoutKind) -> String {
@@ -190,16 +237,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 
-    @objc private func toggleTiling() { tiler.setTilingEnabled(!settings.isTilingEnabled); updateIcon() }
-
     @objc private func chooseLayout(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let kind = LayoutKind(rawValue: raw) else { return }
         tiler.setLayout(kind, on: display)
-    }
-
-    @objc private func toggleAllScreens() {
-        settings.appliesToAllScreens.toggle()
-        tiler.relayout()
     }
 
     @objc private func chooseCount(_ sender: NSMenuItem) { tiler.setCapacity(sender.tag, on: display) }
@@ -215,20 +255,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         tiler.relayout()
     }
 
-    @objc private func toggleFrontApp() {
-        guard let bundleID = appItemBundleID else { return }
-        tiler.setTiling(settings.excludedBundleIDs.contains(bundleID), forBundleID: bundleID)
-    }
-
-    @objc private func focusMode() {
-        if let window = selectedWindow {
-            selectionHandled = true
-            tiler.toggleFocusMode(window: window)
-        } else {
-            tiler.toggleFocusMode()
-        }
-    }
-
     /// Closing the menu after picking a tile makes that window active. Actions run after
     /// the menu closes, so wait a moment to let one that handles the selection itself claim it.
     func menuDidClose(_ menu: NSMenu) {
@@ -241,42 +267,27 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     private func updateSelectionItems() {
         guard let window = selectedWindow, let app = tiler.appName(of: window) else { return }
-        if let appItem, let bundleID = app.bundleID {
-            let icon = tiler.appIcon(of: window)
-            configureAppItem(appItem, name: app.name, bundleID: bundleID, icon: icon)
+        if let appRow, let bundleID = app.bundleID {
+            configureAppRow(appRow, name: app.name, bundleID: bundleID, icon: tiler.appIcon(of: window))
         }
-        if let focusItem, focusItem.state == .off {
-            focusItem.subtitle = "Fill the screen with \(app.name)"
+        if let focusRow, !focusRow.isOn {
+            focusRow.update(title: "Focus Mode", subtitle: Self.focusSubtitle(false, app: app.name),
+                            icon: MenuIcons.symbol("arrow.up.left.and.arrow.down.right"), isOn: false)
         }
     }
 
-    private func configureAppItem(_ entry: NSMenuItem, name: String, bundleID: String, icon: NSImage?) {
+    private func configureAppRow(_ row: SwitchRowView, name: String, bundleID: String, icon: NSImage?) {
         let tiled = !settings.excludedBundleIDs.contains(bundleID)
         appItemBundleID = bundleID
-        entry.title = "Include \(name) in Tiling"
-        entry.state = tiled ? .on : .off
-        entry.image = icon.map { icon in
+        let small = icon.map { icon -> NSImage in
             let small = icon.copy() as! NSImage
             small.size = NSSize(width: 16, height: 16)
             return small
         }
-        entry.subtitle = tiled ? "On: its windows are part of the layout"
-                               : "Off: its windows are left where you put them"
+        row.update(title: "Include \(name) in Tiling", subtitle: Self.appSubtitle(tiled), icon: small, isOn: tiled)
     }
     @objc private func retile() { tiler.retile() }
     @objc private func forgetSizes() { tiler.forgetLearnedSizes() }
-
-    @objc private func toggleLogin() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            NSAlert(error: error).runModal()
-        }
-    }
 
     @objc private func showShortcuts() {
         let alert = NSAlert()
@@ -321,6 +332,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let entry = action(title, selector, icon: icon, subtitle: subtitle)
         entry.state = on ? .on : .off
         return entry
+    }
+
+    /// An on/off setting shown as a switch; it acts immediately and keeps the menu open.
+    private func switchItem(_ title: String, subtitle: String?, icon: NSImage?, isOn: Bool,
+                            _ onChange: @escaping (Bool) -> String?) -> (item: NSMenuItem, row: SwitchRowView) {
+        let row = SwitchRowView(title: title, subtitle: subtitle, icon: icon, isOn: isOn)
+        row.onChange = onChange
+        let item = NSMenuItem()
+        item.view = row
+        return (item, row)
     }
 
     private func submenu(_ title: String, _ menu: NSMenu) -> NSMenuItem {
