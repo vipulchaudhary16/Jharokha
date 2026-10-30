@@ -12,13 +12,18 @@ extension TilingManager {
 
     func isPinned(_ bundleID: String) -> Bool { settings.pinnedBundleIDs.contains(bundleID) }
 
-    /// Pins or unpins the front app (or the one given).
-    func togglePin(bundleID: String? = nil) {
-        guard let bundleID = bundleID ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-              bundleID != Bundle.main.bundleIdentifier else { return }
+    /// Pins or unpins the front app (the keyboard shortcut).
+    func togglePin() {
+        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return }
+        setPinned(!isPinned(bundleID), bundleID: bundleID)
+    }
+
+    /// Pins or unpins an app. Setting a state rather than flipping it means a repeated click
+    /// or key bounce can't undo the change (each one also restarts the Dock).
+    func setPinned(_ pin: Bool, bundleID: String) {
+        guard bundleID != Bundle.main.bundleIdentifier, pin != isPinned(bundleID) else { return }
         let name = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.localizedName ?? bundleID
-        let pin = !isPinned(bundleID)
-        guard Self.confirmDockRestart() else { return }
+        guard Self.confirmDockRestart(pinning: pin) else { return }
 
         var pinned = settings.pinnedBundleIDs
         if pin { pinned.insert(bundleID) } else { pinned.remove(bundleID) }
@@ -94,16 +99,16 @@ extension TilingManager {
     }
 
     /// Asks once before the first pin, since it briefly restarts the Dock.
-    private static func confirmDockRestart() -> Bool {
+    private static func confirmDockRestart(pinning: Bool) -> Bool {
         let key = "pinRestartConfirmed"
         if UserDefaults.standard.bool(forKey: key) { return true }
         let alert = NSAlert()
-        alert.messageText = "Pin to every desktop?"
+        alert.messageText = pinning ? "Pin to every desktop?" : "Unpin from every desktop?"
         alert.informativeText = """
         Pane uses the same setting as the Dock's Options › All Desktops. macOS only applies it \
         when the Dock restarts, so the Dock will disappear for a second. Your windows aren't affected.
         """
-        alert.addButton(withTitle: "Pin")
+        alert.addButton(withTitle: pinning ? "Pin" : "Unpin")
         alert.addButton(withTitle: "Cancel")
         alert.showsSuppressionButton = true
         alert.suppressionButton?.title = "Don't ask again"

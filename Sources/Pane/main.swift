@@ -129,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let tabView = TabViewSwitcher()
     private var menu: StatusMenu?
     private var trustTimer: Timer?
+    private var lastPinPress = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = StatusMenu(tiler: tiler, modes: modes, chrome: chrome)
@@ -189,7 +190,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .resetSizes: tiler.resetSizes()
         case .float: tiler.toggleFloat()
         case .alwaysFloat: tiler.alwaysFloatActiveApp()
-        case .pinApp: tiler.togglePin()
+        case .pinApp:
+            // One press, one change: a bounce would unpin straight away (and restart the Dock twice).
+            guard Date().timeIntervalSince(lastPinPress) > 1 else { return }
+            lastPinPress = Date()
+            tiler.togglePin()
         case .focusMode: tiler.toggleFocusMode()
         case .noPeek: modes.toggleNoPeek()
         case .cleanSpace: modes.toggleCleanSpace()

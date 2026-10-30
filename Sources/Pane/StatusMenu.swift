@@ -112,11 +112,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             let pinned = tiler.isPinned(bundleID)
             let (pinItem, pinRow) = switchItem("Pin \(app.localizedName ?? bundleID) to Every Desktop",
                                                subtitle: Self.pinSubtitle(pinned), icon: MenuIcons.symbol("pin"), isOn: pinned) { _ in nil }
-            pinRow.onChange = { [weak self, weak pinRow] _ in
+            pinRow.onChange = { [weak self, weak pinRow] on in
                 guard let self, let bundleID = self.appItemBundleID else { return nil }
+                // Closed first: pinning may ask for confirmation and restarts the Dock.
                 menu.cancelTracking()
                 DispatchQueue.main.async {
-                    self.tiler.togglePin(bundleID: bundleID)
+                    self.tiler.setPinned(on, bundleID: bundleID)
                     pinRow?.isOn = self.tiler.isPinned(bundleID)
                 }
                 return nil
