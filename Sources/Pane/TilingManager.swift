@@ -75,6 +75,8 @@ final class TilingManager {
     /// Called when a drag or resize starts (true) and ends (false).
     var onDragChange: ((Bool) -> Void)?
     private var missingSince: [CGWindowID: Date] = [:]
+    /// Per display key: how many tiles fit after minimum sizes, until windows come or go.
+    var solvedCapacity: [String: Int] = [:]
     /// The windows each screen had when it was last arranged by size.
     var arrangedMembers: [String: Set<CGWindowID>] = [:]
     /// Windows that keep refusing their tile's frame (an app minimum Pane hasn't fitted yet).
@@ -351,7 +353,12 @@ final class TilingManager {
             var state = states[display.key] ?? ScreenTiles()
             let present = (groups[display.key] ?? []).sorted { firstSeen[$0, default: 0] < firstSeen[$1, default: 0] }
             let active = lastFocused.flatMap { state.tileIndex(of: $0) }
-            state.reconcile(present: present, capacity: settings.capacity(for: display), activeTile: active)
+            // When windows come or go, find out afresh how many tiles fit; otherwise keep the
+            // count the minimum sizes allowed, so a "no room" stack isn't split up and merged
+            // again on every refresh (which shuffled the window you picked to the back).
+            if Set(present) != Set(state.allWindows) { solvedCapacity[display.key] = nil }
+            let capacity = min(settings.capacity(for: display), solvedCapacity[display.key] ?? .max)
+            state.reconcile(present: present, capacity: capacity, activeTile: active)
             // ⌘-Tab, the Dock or a click can bring a stacked window forward; it becomes the showing one.
             if let focused { state.show(focused) }
             let members = Set(state.allWindows)
@@ -516,6 +523,9 @@ final class TilingManager {
             // A single window larger than the screen: let the app clamp it.
             guard state.tiles.count > 1 else { return frames(for: display, count: 1) }
             state.normalize(capacity: state.tiles.count - 1)
+            solvedCapacity[display.key] = state.tiles.count
+            // Merging must not bury the window you're using.
+            if let focused = lastFocused { state.show(focused) }
         }
     }
 
@@ -607,10 +617,12 @@ final class TilingManager {
         guard grew else { return }
         settings.setLearnedMinimum(learned, for: bundleID)
         minimumsChanged = true
+        solvedCapacity.removeAll()
     }
 
     func forgetLearnedSizes() {
         settings.forgetLearnedMinimums()
+        solvedCapacity.removeAll()
         writes.removeAll()
         limitedBy.removeAll()
         refresh()
@@ -722,6 +734,8 @@ final class TilingManager {
             Toast.show("This window isn't in a stack")
             return
         }
+        // It is the window in use from now on, even before macOS reports the focus change.
+        lastFocused = next
         apply(c.displays)
         windows[next]?.focus()
     }
@@ -861,6 +875,7 @@ final class TilingManager {
         writes.removeAll()
         limitedBy.removeAll()
         arrangedMembers.removeAll()   // Re-apply also re-arranges by size
+        solvedCapacity.removeAll()
         refresh()
         let tiled = tiledWindowCount
         log.info("Retile: \(tiled) windows tiled, \(moved) had moved")
@@ -913,6 +928,7 @@ final class TilingManager {
 
     /// Re-applies layout after a setting changed (layout, count, main size, spacing).
     func relayout(_ display: Display? = nil) {
+        solvedCapacity.removeAll()
         let displays = Display.current()
         for d in displays where display == nil || d.uuid == display?.uuid {
             states[d.key]?.normalize(capacity: settings.capacity(for: d))
