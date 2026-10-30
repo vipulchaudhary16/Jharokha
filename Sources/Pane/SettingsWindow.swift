@@ -23,7 +23,7 @@ final class SettingsWindowController {
             window.contentViewController = NSHostingController(rootView: view)
         } else {
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-            window.title = "Pane Settings"
+            window.title = "Jharokha Settings"
             window.styleMask = [.titled, .closable, .miniaturizable]
             window.isReleasedWhenClosed = false
             window.center()
@@ -123,7 +123,7 @@ private struct GeneralSettings: View {
                 LabeledContent("Welcome guide") {
                     Button("Show Again") { controller.onShowWelcome?() }
                 }
-                Toggle("Open Pane at login", isOn: $login)
+                Toggle("Open Jharokha at login", isOn: $login)
                     .onChange(of: login) { _, value in
                         do {
                             if value { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -133,8 +133,8 @@ private struct GeneralSettings: View {
                         if value, SMAppService.mainApp.status == .requiresApproval {
                             // macOS wants the user to allow it in System Settings first.
                             let alert = NSAlert()
-                            alert.messageText = "Allow Pane in Login Items"
-                            alert.informativeText = "macOS asks you to approve apps that open at login. Turn Pane on under Open at Login, then come back."
+                            alert.messageText = "Allow Jharokha in Login Items"
+                            alert.informativeText = "macOS asks you to approve apps that open at login. Turn Jharokha on under Open at Login, then come back."
                             alert.addButton(withTitle: "Open Login Items")
                             alert.addButton(withTitle: "Cancel")
                             if alert.runModal() == .alertFirstButtonReturn { SMAppService.openSystemSettingsLoginItems() }

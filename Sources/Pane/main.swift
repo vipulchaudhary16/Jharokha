@@ -155,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WelcomeController.shared.show { [weak self] tidy in
             guard let self else { return }
             if tidy || firstRun { self.tiler.setTilingEnabled(tidy) }
-            if !tidy && firstRun { Toast.show("Pane is in the menu bar · switch on Automatic Tiling when you're ready") }
+            if !tidy && firstRun { Toast.show("Jharokha is in the menu bar · switch on Automatic Tiling when you're ready") }
             self.startWhenTrusted(prompt: false)
         }
     }

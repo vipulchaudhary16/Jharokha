@@ -1,6 +1,8 @@
-# Pane
+# Jharokha
 
 Automatic window tiling for macOS 15+. Every window gets a place as it opens, and the rest reflow when one closes.
+
+A jharokha (झरोखा) is the carved, latticed window of Rajasthani palaces. The code still uses the working name Pane (targets, folders and the `dev.pane.Pane` bundle identifier, which keeps Accessibility access and settings across the rename).
 
 ## Build and run
 

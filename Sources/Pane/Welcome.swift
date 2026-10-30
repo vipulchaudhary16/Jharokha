@@ -19,7 +19,7 @@ final class WelcomeController {
             onFinish(tidy)
         }
         let window = NSWindow(contentViewController: NSHostingController(rootView: WelcomeView(onFinish: finish)))
-        window.title = "Welcome to Pane"
+        window.title = "Welcome to Jharokha"
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -97,8 +97,8 @@ private struct WelcomeView: View {
     private var intro: some View {
         VStack(spacing: 18) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
-            Text("Welcome to Pane").font(.system(size: 28, weight: .bold))
-            Text("Pane arranges your windows into tiles the moment you open them. No dragging, no snapping.")
+            Text("Welcome to Jharokha").font(.system(size: 28, weight: .bold))
+            Text("Jharokha arranges your windows into tiles the moment you open them. No dragging, no snapping.")
                 .font(.title3).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 400)
             VStack(alignment: .leading, spacing: 12) {
                 feature("rectangle.split.2x2", "Four layouts, remembered for each desktop")
@@ -115,8 +115,8 @@ private struct WelcomeView: View {
             Image(systemName: trusted ? "checkmark.shield.fill" : "lock.shield")
                 .font(.system(size: 54)).foregroundStyle(trusted ? Color.green : Color.accentColor)
                 .contentTransition(.symbolEffect(.replace))
-            Text("Let Pane move your windows").font(.system(size: 24, weight: .bold))
-            Text("macOS lets window managers move windows only with Accessibility access. Pane uses it just to see where windows are and put them in place. It never records your screen and doesn't use the network.")
+            Text("Let Jharokha move your windows").font(.system(size: 24, weight: .bold))
+            Text("macOS lets window managers move windows only with Accessibility access. Jharokha uses it just to see where windows are and put them in place. It never records your screen and doesn't use the network.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
             if trusted {
                 Label("Access granted", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.headline)
@@ -126,7 +126,7 @@ private struct WelcomeView: View {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
                 }
                 .controlSize(.large)
-                Text("Turn on Pane in the list, then come back here.").font(.callout).foregroundStyle(.tertiary)
+                Text("Turn on Jharokha in the list, then come back here.").font(.callout).foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 40)
@@ -135,7 +135,7 @@ private struct WelcomeView: View {
     private var shortcuts: some View {
         VStack(spacing: 16) {
             Text("A few keys worth knowing").font(.system(size: 24, weight: .bold))
-            Text("Pane lives in the menu bar. These work from any app:").foregroundStyle(.secondary)
+            Text("Jharokha lives in the menu bar. These work from any app:").foregroundStyle(.secondary)
             VStack(spacing: 8) {
                 shortcut(.swapRight, "Swap with the window beside it", fallback: "⌃⌥ arrows")
                 shortcut(.makePrimary, "Make the active window the main one")
@@ -155,7 +155,7 @@ private struct WelcomeView: View {
         VStack(spacing: 18) {
             Image(systemName: "sparkles.rectangle.stack").font(.system(size: 54)).foregroundStyle(Color.accentColor)
             Text("Ready for your first tidy?").font(.system(size: 24, weight: .bold))
-            Text("Pane will arrange the windows on your screens now. Re-apply puts them back any time, and you can switch Automatic Tiling off from the menu bar.")
+            Text("Jharokha will arrange the windows on your screens now. Re-apply puts them back any time, and you can switch Automatic Tiling off from the menu bar.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
             HStack(spacing: 12) {
                 Button("Not Now") { onFinish(false) }.controlSize(.large)
@@ -165,7 +165,7 @@ private struct WelcomeView: View {
             }
             .padding(.top, 8)
             if !trusted {
-                Text("Pane needs Accessibility access first.").font(.callout).foregroundStyle(.orange)
+                Text("Jharokha needs Accessibility access first.").font(.callout).foregroundStyle(.orange)
             }
         }
         .padding(.horizontal, 40)

@@ -39,7 +39,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let paused = !settings.isTilingEnabled || tiler.isPausedForStageManager || !AX.isTrusted || !tiler.accessUsable
         let mode = modes.cleanSpace.isOn ? "Privacy Mode" : modes.noPeek.isOn ? "No Peek" : tiler.focusMode.isEmpty ? nil : "Focus Mode"
         item.button?.image = MenuIcons.statusGlyph(paused: paused, modeOn: mode != nil)
-        item.button?.setAccessibilityLabel(paused ? "Pane, paused" : mode.map { "Pane, \($0) on" } ?? "Pane")
+        item.button?.setAccessibilityLabel(paused ? "Jharokha, paused" : mode.map { "Jharokha, \($0) on" } ?? "Jharokha")
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -67,7 +67,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(preview)
         if !AX.isUsable {
             menu.addItem(action("Grant Accessibility Access…", #selector(grantAccess),
-                                icon: "lock.shield", subtitle: "Pane needs it to move and resize windows"))
+                                icon: "lock.shield", subtitle: "Jharokha needs it to move and resize windows"))
         }
         menu.addItem(.separator())
         menu.addItem(switchItem("Automatic Tiling", subtitle: Self.tilingSubtitle(settings.isTilingEnabled),
@@ -182,7 +182,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(action("Keyboard Shortcuts…", #selector(showShortcuts), icon: "keyboard"))
         menu.addItem(action("Settings…", #selector(showSettings), key: ",", modifiers: [.command], icon: "gearshape"))
-        menu.addItem(action("Quit Pane", #selector(quit), key: "q", modifiers: [.command], icon: "xmark.circle"))
+        menu.addItem(action("Quit Jharokha", #selector(quit), key: "q", modifiers: [.command], icon: "xmark.circle"))
     }
 
     private static func pinTitle(_ name: String, pinned: Bool) -> String {
@@ -212,8 +212,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private var statusText: String {
-        if !AX.isTrusted { return "Pane needs Accessibility access" }
-        if !tiler.accessUsable { return "Accessibility access isn't working: turn Pane off and on in System Settings" }
+        if !AX.isTrusted { return "Jharokha needs Accessibility access" }
+        if !tiler.accessUsable { return "Accessibility access isn't working: turn Jharokha off and on in System Settings" }
         if !settings.isTilingEnabled { return "Automatic tiling is off" }
         if tiler.isPausedForStageManager { return "Paused while Stage Manager is on" }
         let count = tiler.tiledWindowCount

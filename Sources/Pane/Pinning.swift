@@ -114,7 +114,7 @@ extension TilingManager {
         let alert = NSAlert()
         alert.messageText = pinning ? "Pin to every desktop?" : "Unpin from every desktop?"
         alert.informativeText = """
-        Pane uses the same setting as the Dock's Options › All Desktops. macOS only applies it \
+        Jharokha uses the same setting as the Dock's Options › All Desktops. macOS only applies it \
         when the Dock restarts, so the Dock will disappear for a second. Your windows aren't affected.
         """
         alert.addButton(withTitle: pinning ? "Pin" : "Unpin")

@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds Pane and wraps it into build/Pane.app.
+# Builds Jharokha (the Pane target) and wraps it into build/Jharokha.app.
 # Signs with $SIGN_IDENTITY, else the local "Pane Local Signing" certificate when the
 # keychain has it, else ad-hoc. A stable identity keeps the Accessibility grant across
 # rebuilds; ad-hoc signing makes macOS ask again after every build.
@@ -12,10 +12,10 @@ VERSION="${VERSION:-0.1.0}"
 swift build -c "$CONFIG" --product Pane
 BIN="$(swift build -c "$CONFIG" --show-bin-path)/Pane"
 
-APP="build/Pane.app"
+APP="build/Jharokha.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Pane"
+cp "$BIN" "$APP/Contents/MacOS/Jharokha"
 # Regenerate with: swift scripts/make-icon.swift
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
@@ -24,10 +24,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- The identifier predates the name; changing it would reset Accessibility access and settings. -->
     <key>CFBundleIdentifier</key><string>dev.pane.Pane</string>
-    <key>CFBundleName</key><string>Pane</string>
-    <key>CFBundleDisplayName</key><string>Pane</string>
-    <key>CFBundleExecutable</key><string>Pane</string>
+    <key>CFBundleName</key><string>Jharokha</string>
+    <key>CFBundleDisplayName</key><string>Jharokha</string>
+    <key>CFBundleExecutable</key><string>Jharokha</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -35,7 +36,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>Pane — automatic window tiling for macOS</string>
+    <key>NSHumanReadableCopyright</key><string>Jharokha — automatic window tiling for macOS</string>
 </dict>
 </plist>
 PLIST

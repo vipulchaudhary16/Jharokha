@@ -986,7 +986,7 @@ final class TilingManager {
         guard AX.isUsable else {
             log.error("Retile: Accessibility access is not usable (\(String(describing: AX.probe()), privacy: .public))")
             AX.requestTrust()
-            Toast.show("Turn Pane off and on in System Settings › Privacy & Security › Accessibility")
+            Toast.show("Turn Jharokha off and on in System Settings › Privacy & Security › Accessibility")
             onStateChange?()
             return
         }
