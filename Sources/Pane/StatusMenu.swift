@@ -195,8 +195,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(dimItem)
 
         let cleanOn = modes.cleanSpace.isOn
-        menu.addItem(switchItem("Clean Space", subtitle: Self.cleanSpaceSubtitle(cleanOn),
-                                icon: MenuIcons.symbol("sparkles.rectangle.stack"), isOn: cleanOn) { [weak self] _ in
+        menu.addItem(switchItem("Privacy Mode", subtitle: Self.cleanSpaceSubtitle(cleanOn),
+                                icon: MenuIcons.symbol("eye.slash"), isOn: cleanOn) { [weak self] _ in
             guard let self else { return nil }
             // Act after the menu closes, so the window to present is the user's, not the menu.
             menu.cancelTracking()

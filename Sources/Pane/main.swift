@@ -42,7 +42,7 @@ final class ModeController {
         if let id = window?.id, Settings.shared.cleanSpaceFillsScreen { tiler.setFocusMode(true, window: id) }
         cleanSpace.start(on: screen, below: window?.id)
         update()
-        Toast.show("Clean Space\(ShortcutStore.shared.hint(.cleanSpace, "to bring everything back"))")
+        Toast.show("Privacy Mode\(ShortcutStore.shared.hint(.cleanSpace, "to bring everything back"))")
         onChange?()
     }
 
@@ -50,7 +50,7 @@ final class ModeController {
         cleanSpace.stop()
         if let id = cleanWindow { tiler.setFocusMode(false, window: id) }
         cleanWindow = nil
-        if announce { Toast.show("Clean Space off") }
+        if announce { Toast.show("Privacy Mode off") }
         onChange?()
     }
 

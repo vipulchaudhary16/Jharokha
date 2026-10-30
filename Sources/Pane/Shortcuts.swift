@@ -117,7 +117,7 @@ enum ShortcutAction: String, CaseIterable {
         case .alwaysFloat: return "Always float windows like the active one"
         case .focusMode: return "Focus mode"
         case .noPeek: return "No peek: fade every other window"
-        case .cleanSpace: return "Clean Space: a plain screen for sharing"
+        case .cleanSpace: return "Privacy Mode: share one window, the rest as app cards"
         case .retile: return "Re-apply tiling"
         case .tile1: return "Tile 1 window on this screen"
         case .tile2: return "Tile up to 2 windows"

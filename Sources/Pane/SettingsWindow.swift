@@ -90,7 +90,7 @@ private struct GeneralSettings: View {
                 Toggle("Blur other windows", isOn: $blur)
                     .onChange(of: blur) { _, value in settings.noPeekBlur = value; onChange() }
             }
-            Section("Clean Space") {
+            Section("Privacy Mode") {
                 Picker("Background", selection: $background) {
                     ForEach(Settings.CleanSpaceBackground.allCases, id: \.self) { Text($0.title).tag($0) }
                 }

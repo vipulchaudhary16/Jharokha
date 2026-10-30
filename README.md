@@ -30,7 +30,7 @@ This needs only the Command Line Tools, not Xcode. Builds are signed with the "P
 | F / ⇧F | Float the active window / always float its app |
 | Z | Focus mode |
 | D | No peek: fade every other window |
-| P | Clean Space: one window on a plain screen |
+| P | Privacy Mode: share one window; the others show only as app cards |
 | R | Re-apply tiling |
 | ⌘1–⌘5 | Tile up to N windows on this screen |
 
