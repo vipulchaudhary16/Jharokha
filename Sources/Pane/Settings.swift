@@ -93,6 +93,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "showsQuickActions") }
     }
 
+    /// Give the biggest tiles to the windows that need the most room.
+    var arrangesBySize: Bool {
+        get { defaults.object(forKey: "arrangesBySize") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "arrangesBySize") }
+    }
+
     /// Windows glide into their tiles instead of jumping.
     var animatesWindows: Bool {
         get { defaults.object(forKey: "animatesWindows") as? Bool ?? true }

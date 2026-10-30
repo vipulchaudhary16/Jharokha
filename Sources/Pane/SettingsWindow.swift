@@ -53,6 +53,7 @@ private struct GeneralSettings: View {
     @State private var color = Settings.shared.highlightColor
     @State private var quickActions = Settings.shared.showsQuickActions
     @State private var animate = Settings.shared.animatesWindows
+    @State private var smart = Settings.shared.arrangesBySize
     @State private var veil = Settings.shared.veilsResizing
     @State private var hoverFocus = Settings.shared.hoverFocus
     @State private var dim = Settings.shared.noPeekDim
@@ -73,6 +74,8 @@ private struct GeneralSettings: View {
                 .onChange(of: color) { _, value in settings.highlightColor = value; onChange() }
             }
             Section("Windows") {
+                Toggle("Smart placement: windows that need more room get the bigger tiles", isOn: $smart)
+                    .onChange(of: smart) { _, value in settings.arrangesBySize = value; onChange() }
                 Toggle("Animate windows into place", isOn: $animate)
                     .onChange(of: animate) { _, value in settings.animatesWindows = value; onChange() }
                 Toggle("Blur windows while they resize", isOn: $veil)

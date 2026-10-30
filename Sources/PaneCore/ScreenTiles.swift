@@ -185,6 +185,12 @@ public struct ScreenTiles: Equatable, Sendable {
         normalize(capacity: capacity)
     }
 
+    /// Reorders the tiles: position i gets the tile that was at `order[i]`. Stacks move whole.
+    public mutating func arrange(_ order: [Int]) {
+        guard order.count == tiles.count, Set(order) == Set(tiles.indices) else { return }
+        tiles = order.map { tiles[$0] }
+    }
+
     /// Shows the next (or previous) window of a stacked tile and returns it.
     public mutating func cycle(tile index: Int, by step: Int) -> WindowID? {
         guard tiles.indices.contains(index), tiles[index].isStacked else { return nil }

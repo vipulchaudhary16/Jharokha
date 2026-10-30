@@ -140,6 +140,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         gapItem.image = MenuIcons.spacing(CGFloat(settings.gap))
         gapItem.subtitle = "Gap between windows and screen edges"
         menu.addItem(gapItem)
+        menu.addItem(switchItem("Smart Placement", subtitle: "Windows that need more room get the bigger tiles",
+                                icon: MenuIcons.symbol("rectangle.3.group"), isOn: settings.arrangesBySize) { [weak self] on in
+            self?.settings.arrangesBySize = on
+            if on { self?.tiler.retile() }
+            return nil
+        }.item)
         menu.addItem(switchItem("Apply Changes to All Screens", subtitle: Self.allScreensSubtitle(settings.appliesToAllScreens),
                                 icon: MenuIcons.symbol("display.2"), isOn: settings.appliesToAllScreens) { [weak self] on in
             self?.settings.appliesToAllScreens = on

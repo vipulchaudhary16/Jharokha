@@ -37,6 +37,9 @@ run("resizingOnlyAffectsTheSplitOnThatEdge", layout.resizingOnlyAffectsTheSplitO
 run("dragFromTheLeftEdgeGrowsLeftward", layout.dragFromTheLeftEdgeGrowsLeftward)
 run("outerEdgesNeverMoveAndNeighboursKeepAFloor", layout.outerEdgesNeverMoveAndNeighboursKeepAFloor)
 run("growingBothEdgesOfAMiddleColumn", layout.growingBothEdgesOfAMiddleColumn)
+run("biggestNeedsGetTheBiggestTiles", layout.biggestNeedsGetTheBiggestTiles)
+run("unknownNeedsKeepTheirOrder", layout.unknownNeedsKeepTheirOrder)
+run("heightNeedGetsTheTallestTile", layout.heightNeedGetsTheTallestTile)
 
 let tiles = ScreenTilesTests()
 run("newWindowsGetTilesUntilFullThenStack", tiles.newWindowsGetTilesUntilFullThenStack)

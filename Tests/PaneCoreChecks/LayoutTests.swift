@@ -168,4 +168,23 @@ struct LayoutTests {
         expect(f[0].width == 450)
         expect(f[2].minX == 800 && f[2].width == 200)
     }
+
+    func biggestNeedsGetTheBiggestTiles() {
+        let tiles = frames(.side, 3) // big left, two small right
+        // Window 2 needs width (a browser), window 0 nothing known, window 1 a little height.
+        let order = LayoutEngine.assignBySize(tiles: tiles, needs: [.zero, CGSize(width: 0, height: 300), CGSize(width: 700, height: 0)])
+        expect(order[0] == 2)
+        expect(Set(order) == [0, 1, 2])
+    }
+
+    func unknownNeedsKeepTheirOrder() {
+        let tiles = frames(.grid, 3)
+        expect(LayoutEngine.assignBySize(tiles: tiles, needs: [.zero, .zero, .zero]) == [0, 1, 2])
+    }
+
+    func heightNeedGetsTheTallestTile() {
+        // Rows: the first row is tallest with a 0.6 ratio.
+        let tiles = frames(.rows, 2, ratio: 0.6)
+        expect(LayoutEngine.assignBySize(tiles: tiles, needs: [CGSize(width: 0, height: 100), CGSize(width: 0, height: 450)]) == [1, 0])
+    }
 }

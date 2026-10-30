@@ -345,6 +345,40 @@ public enum LayoutEngine {
         return best?.index
     }
 
+    /// Which window goes in which tile, so windows that need the most room get the tiles that
+    /// fit them: a window needing width gets the widest tile, one needing height the tallest,
+    /// in descending order of need. Windows with no known need keep their current order in
+    /// the tiles left over. Returns, for each tile position, the index of the window for it.
+    public static func assignBySize(tiles: [CGRect], needs: [CGSize]) -> [Int] {
+        let n = min(tiles.count, needs.count)
+        guard n > 1 else { return Array(0..<n) }
+        var freeTiles = Set(0..<n)
+        var result = [Int](repeating: -1, count: n)
+        let needy = (0..<n).filter { needs[$0].width > 0 || needs[$0].height > 0 }
+            .sorted { needs[$0].width * max(needs[$0].height, 1) + needs[$0].width + needs[$0].height
+                    > needs[$1].width * max(needs[$1].height, 1) + needs[$1].width + needs[$1].height }
+        for window in needy {
+            let need = needs[window]
+            let best = freeTiles.max { a, b in
+                func score(_ t: Int) -> (Int, CGFloat) {
+                    let tile = tiles[t]
+                    let fits = (tile.width >= need.width ? 1 : 0) + (tile.height >= need.height ? 1 : 0)
+                    // Prefer the dimension it needs more of; otherwise the bigger tile.
+                    let room = need.width > need.height ? tile.width : need.height > need.width ? tile.height : tile.width * tile.height
+                    return (fits, room)
+                }
+                let (fa, ra) = score(a), (fb, rb) = score(b)
+                return fa != fb ? fa < fb : (ra != rb ? ra < rb : a > b)
+            }!
+            result[best] = window
+            freeTiles.remove(best)
+        }
+        // The rest keep their relative order in the remaining tiles.
+        let rest = (0..<n).filter { !needy.contains($0) }
+        for (tile, window) in zip(freeTiles.sorted(), rest) { result[tile] = window }
+        return result
+    }
+
     /// Index of the rect containing `point`, if any.
     public static func tile(at point: CGPoint, in rects: [CGRect]) -> Int? {
         rects.firstIndex { $0.contains(point) }

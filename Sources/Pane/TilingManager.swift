@@ -24,7 +24,7 @@ final class TilingManager {
     var targets: [CGWindowID: CGRect] = [:]
     /// The last tiled window that had focus; new windows stack into its tile on a full screen.
     var lastFocused: CGWindowID?
-    private var bundleIDs: [CGWindowID: String] = [:]
+    var bundleIDs: [CGWindowID: String] = [:]
     /// The tile rects last applied per display key, after minimum sizes were solved.
     var appliedRects: [String: [CGRect]] = [:]
     /// Repeated writes of the same frame to one window; see `place`.
@@ -75,6 +75,8 @@ final class TilingManager {
     /// Called when a drag or resize starts (true) and ends (false).
     var onDragChange: ((Bool) -> Void)?
     private var missingSince: [CGWindowID: Date] = [:]
+    /// The windows each screen had when it was last arranged by size.
+    var arrangedMembers: [String: Set<CGWindowID>] = [:]
     /// Windows that keep refusing their tile's frame (an app minimum Pane hasn't fitted yet).
     var refusing: Set<CGWindowID> = []
     /// Frames of refusing windows when the current mouse press started moving things; for them
@@ -352,6 +354,11 @@ final class TilingManager {
             state.reconcile(present: present, capacity: settings.capacity(for: display), activeTile: active)
             // ⌘-Tab, the Dock or a click can bring a stacked window forward; it becomes the showing one.
             if let focused { state.show(focused) }
+            let members = Set(state.allWindows)
+            if members != arrangedMembers[display.key] {
+                arrangedMembers[display.key] = members
+                arrangeBySize(display, &state)
+            }
             states[display.key] = state
             if let zoomed = focusMode[display.key], !state.contains(zoomed) { focusMode[display.key] = nil }
         }
@@ -849,6 +856,7 @@ final class TilingManager {
         focusMode.removeAll()
         writes.removeAll()
         limitedBy.removeAll()
+        arrangedMembers.removeAll()   // Re-apply also re-arranges by size
         refresh()
         let tiled = tiledWindowCount
         log.info("Retile: \(tiled) windows tiled, \(moved) had moved")
