@@ -13,6 +13,7 @@ final class ModeController {
     init(tiler: TilingManager) {
         self.tiler = tiler
         cleanSpace.onAutomaticEnd = { [weak self] in self?.endCleanSpace(announce: false) }
+        cleanSpace.onToggle = { [weak self] id in self?.toggleShown(id) }
     }
 
     func toggleNoPeek() {
@@ -38,7 +39,9 @@ final class ModeController {
         }
         guard let screen = screen ?? NSScreen.main else { return }
         cleanWindow = window?.id
-        presented = window?.id
+        // At first only the window you're in is shown; each other tile gets an eye to show it too.
+        shown = window.map { [$0.id] } ?? []
+        arrangement = nil
         if let id = window?.id, Settings.shared.cleanSpaceFillsScreen { tiler.setFocusMode(true, window: id) }
         cleanSpace.start(on: screen, below: window?.id)
         update()
@@ -50,35 +53,67 @@ final class ModeController {
         cleanSpace.stop()
         if let id = cleanWindow { tiler.setFocusMode(false, window: id) }
         cleanWindow = nil
+        shown = []
+        arrangement = nil
         if announce { Toast.show("Privacy Mode off") }
         onChange?()
+    }
+
+    /// Shows a hidden window (it comes forward with focus) or hides a shown one.
+    private func toggleShown(_ id: CGWindowID) {
+        if let index = shown.firstIndex(of: id) {
+            shown.remove(at: index)
+            arrangement = nil
+            // Keystrokes must not keep going to a window that's now hidden.
+            if AX.focusedWindow()?.id == id, let next = shown.last {
+                tiler.activate(window: next)
+            }
+            update()
+        } else {
+            shown.append(id)
+            arrangement = nil
+            tiler.activate(window: id)
+            update()
+        }
     }
 
     /// Called after every layout pass and focus change.
     func update() {
         let focused = AX.focusedWindow()
         noPeek.update(below: focused?.id)
-        // Clean Space follows the active window only while it is on the plain screen;
-        // reordering under a window elsewhere would cover the presented one.
-        if cleanSpace.isOn, let screen = cleanSpace.screen, let frame = focused?.frame {
-            let height = NSScreen.screens.first?.frame.maxY ?? 0
-            if screen.frame.contains(NSPoint(x: frame.midX, y: height - frame.midY)) {
-                cleanSpace.update(below: focused?.id)
-                presented = focused?.id
-            }
+        guard cleanSpace.isOn, let screen = cleanSpace.screen else { return }
+
+        let tiles = tiler.chromeTiles().filter { $0.screen == screen }
+        let onScreen = Set(tiles.flatMap(\.windows))
+        shown.removeAll { !onScreen.contains($0) && $0 != cleanWindow }
+        // Bringing a hidden window forward (⌘-Tab, the Dock) shows it.
+        if let id = focused?.id, onScreen.contains(id), !shown.contains(id) { shown.append(id) }
+
+        // Shown windows above the backdrop, hidden ones below: raise the shown windows
+        // (the active one last, so it stays in front), then slide the backdrop under them.
+        let signature = shown.map(String.init).joined(separator: ",") + "|\(focused?.id ?? 0)"
+        if signature != arrangement {
+            arrangement = signature
+            let order = shown.filter { $0 != focused?.id } + shown.filter { $0 == focused?.id }
+            order.forEach { tiler.raise(window: $0) }
+            cleanSpace.order(below: order.first)
         }
-        if cleanSpace.isOn, let screen = cleanSpace.screen {
-            // Every other tile on that screen becomes a placeholder card.
-            let cards = tiler.chromeTiles().filter { $0.screen == screen && !$0.windows.contains { $0 == presented } }.map { tile in
-                CleanSpace.Card(rect: tile.rect, icon: tiler.appIcon(of: tile.showing),
-                                name: tiler.appName(of: tile.showing)?.name ?? "Window", hiddenCount: tile.windows.count - 1)
-            }
-            cleanSpace.setCards(cards)
-        }
+
+        let isShown: (TilingManager.ChromeTile) -> Bool = { tile in tile.windows.contains { self.shown.contains($0) } }
+        cleanSpace.setCards(tiles.filter { !isShown($0) }.map { tile in
+            CleanSpace.Card(window: tile.showing, rect: tile.rect, icon: tiler.appIcon(of: tile.showing),
+                            name: tiler.appName(of: tile.showing)?.name ?? "Window", hiddenCount: tile.windows.count - 1)
+        })
+        cleanSpace.setEyes(tiles.map { tile in
+            let window = tile.windows.first { shown.contains($0) } ?? tile.showing
+            return (window, tile.rect, isShown(tile))
+        })
     }
 
-    /// The window shown above the Clean Space backdrop.
-    private var presented: CGWindowID?
+    /// Windows shown above the Privacy Mode backdrop, most recently shown last.
+    private var shown: [CGWindowID] = []
+    /// The last z-order arrangement applied, to avoid re-raising windows on every update.
+    private var arrangement: String?
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {

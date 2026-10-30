@@ -45,6 +45,9 @@ extension TilingManager {
         AXUIElementPerformAction(button, kAXPressAction as CFString)
     }
 
+    /// Brings a window to the front without giving it focus.
+    func raise(window id: CGWindowID) { windows[id]?.raise() }
+
     func minimize(window id: CGWindowID) {
         windows[id]?.element.set(kAXMinimizedAttribute, kCFBooleanTrue)
     }
