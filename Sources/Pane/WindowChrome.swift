@@ -158,7 +158,7 @@ final class WindowChrome {
         }
         let entry = grip ?? makeGrip()
         grip = entry
-        entry.view.segments = active.windows.count
+        entry.view.icons = active.windows.map { tiler.appIcon(of: $0) }
         entry.view.showingIndex = active.windows.firstIndex(of: active.showing) ?? 0
         entry.view.tile = active
         let size = entry.view.intrinsicSize
@@ -169,13 +169,15 @@ final class WindowChrome {
         let wasHidden = !entry.panel.isVisible || entry.panel.alphaValue < 1
         if wasHidden { entry.panel.alphaValue = 0 }
         entry.panel.setFrame(frame, display: true)
-        entry.panel.order(.above, relativeTo: Int(active.showing))
+        // Floating, so clicking a window (which brings it forward) can't cover it.
+        entry.panel.orderFrontRegardless()
         fadeIn(entry.panel)
         if let bar, bar.panel.isVisible { showBar(for: active) }
     }
 
     private func makeGrip() -> (panel: NSPanel, view: GripView) {
         let panel = Self.overlayPanel(clickThrough: false)
+        panel.level = .floating
         let view = GripView()
         view.onHover = { [weak self] inside in
             guard let self else { return }
@@ -205,7 +207,7 @@ final class WindowChrome {
         let width = min(size.width, rect.width - 16)
         let frame = NSRect(x: rect.midX - width / 2, y: rect.maxY - size.height - 10, width: width, height: size.height)
         entry.panel.setFrame(frame, display: true)
-        entry.panel.order(.above, relativeTo: Int(tile.showing))
+        entry.panel.orderFrontRegardless()
     }
 
     private static func chipTitle(_ tiler: TilingManager, _ id: CGWindowID) -> String {
@@ -215,6 +217,7 @@ final class WindowChrome {
 
     private func makeBar() -> (panel: NSPanel, view: ChipBarView) {
         let panel = Self.overlayPanel(clickThrough: false)
+        panel.level = .floating
         let view = ChipBarView()
         view.onHover = { [weak self] inside in
             if inside { self?.hideBarWork?.cancel() } else { self?.scheduleHideBar() }
@@ -265,12 +268,14 @@ final class WindowChrome {
         for tile in stacked {
             let entry = dots[tile.showing] ?? {
                 let panel = Self.overlayPanel(clickThrough: false)
+                panel.level = .floating
                 let view = StackDotsView()
                 view.onSelect = { [weak self] id in self?.tiler.activate(window: id) }
                 panel.contentView = view
                 return (panel, view)
             }()
             dots[tile.showing] = entry
+            entry.view.icons = tile.windows.map { tiler.appIcon(of: $0) }
             entry.view.windows = tile.windows
             entry.view.showing = tile.showing
             let size = entry.view.intrinsicSize
@@ -278,7 +283,7 @@ final class WindowChrome {
             if !entry.panel.isVisible { entry.panel.alphaValue = 0 }
             entry.panel.setFrame(NSRect(x: rect.midX - size.width / 2, y: rect.maxY + max(settings.gap / 2, 3) - size.height / 2,
                                         width: size.width, height: size.height), display: true)
-            entry.panel.order(.above, relativeTo: Int(tile.showing))
+            entry.panel.orderFrontRegardless()
             fadeIn(entry.panel)
         }
     }
@@ -364,22 +369,56 @@ final class BorderView: NSView {
     }
 }
 
-/// The grip above the active window: one segment per window in its tile, the showing one
-/// longer and solid. Resting on it opens the chip bar or quick actions.
+/// The stack indicator: a dark pill with each stacked window's app icon, the showing one
+/// bright and underlined in orange. On a single window it is a small grip bar.
+enum StackStrip {
+    static let icon: CGFloat = 16, spacing: CGFloat = 6, padding: CGFloat = 8, height: CGFloat = 24
+
+    static func size(count: Int) -> NSSize {
+        count > 1 ? NSSize(width: CGFloat(count) * (icon + spacing) - spacing + padding * 2, height: height)
+                  : NSSize(width: 46, height: 14)
+    }
+
+    static func iconRects(count: Int, in bounds: NSRect) -> [NSRect] {
+        (0..<count).map { index in
+            NSRect(x: bounds.minX + padding + CGFloat(index) * (icon + spacing), y: bounds.midY - icon / 2 + 1, width: icon, height: icon)
+        }
+    }
+
+    static func draw(icons: [NSImage?], showing: Int, in bounds: NSRect) {
+        let pill = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: bounds.height / 2, yRadius: bounds.height / 2)
+        NSColor(white: 0.08, alpha: 0.82).setFill()
+        pill.fill()
+        NSColor.white.withAlphaComponent(0.18).setStroke()
+        pill.lineWidth = 1
+        pill.stroke()
+        guard icons.count > 1 else {
+            NSColor.white.withAlphaComponent(0.8).setFill()
+            NSBezierPath(roundedRect: NSRect(x: bounds.midX - 12, y: bounds.midY - 2, width: 24, height: 4), xRadius: 2, yRadius: 2).fill()
+            return
+        }
+        for (index, rect) in iconRects(count: icons.count, in: bounds).enumerated() {
+            let isShowing = index == showing
+            icons[index]?.draw(in: rect, from: .zero, operation: .sourceOver, fraction: isShowing ? 1 : 0.6)
+            if isShowing {
+                NSColor.systemOrange.setFill()
+                NSBezierPath(roundedRect: NSRect(x: rect.minX + 2, y: bounds.minY + 2.5, width: rect.width - 4, height: 2.5),
+                             xRadius: 1.25, yRadius: 1.25).fill()
+            }
+        }
+    }
+}
+
+/// The grip above the active window: the stack strip (or a small bar for a single window).
+/// Resting on it opens the chip bar or quick actions; clicking an icon shows that window.
 final class GripView: NSView {
-    var segments = 1 { didSet { needsDisplay = true } }
+    var icons: [NSImage?] = [] { didSet { needsDisplay = true } }
     var showingIndex = 0 { didSet { needsDisplay = true } }
     var tile: TilingManager.ChromeTile?
     var onHover: ((Bool) -> Void)?
     var onSelectSegment: ((Int) -> Void)?
 
-    private let segmentWidth: CGFloat = 14, showingWidth: CGFloat = 26, spacing: CGFloat = 4, barHeight: CGFloat = 5
-
-    var intrinsicSize: NSSize {
-        let count = CGFloat(max(segments, 1))
-        let width = segments > 1 ? (count - 1) * (segmentWidth + spacing) + showingWidth : 40
-        return NSSize(width: width + 24, height: 18)
-    }
+    var intrinsicSize: NSSize { StackStrip.size(count: icons.count) }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -390,36 +429,37 @@ final class GripView: NSView {
     override func mouseEntered(with event: NSEvent) { onHover?(true) }
     override func mouseExited(with event: NSEvent) { onHover?(false) }
 
-    private func segmentRects() -> [NSRect] {
-        guard segments > 1 else {
-            return [NSRect(x: bounds.midX - 20, y: bounds.midY - barHeight / 2, width: 40, height: barHeight)]
-        }
-        var x: CGFloat = 12
-        return (0..<segments).map { index in
-            let width = index == showingIndex ? showingWidth : segmentWidth
-            defer { x += width + spacing }
-            return NSRect(x: x, y: bounds.midY - barHeight / 2, width: width, height: barHeight)
-        }
-    }
-
     override func mouseUp(with event: NSEvent) {
+        guard icons.count > 1 else { return }
         let point = convert(event.locationInWindow, from: nil)
-        if let index = segmentRects().firstIndex(where: { $0.insetBy(dx: -2, dy: -6).contains(point) }) {
+        if let index = StackStrip.iconRects(count: icons.count, in: bounds).firstIndex(where: { $0.insetBy(dx: -3, dy: -4).contains(point) }) {
             onSelectSegment?(index)
         }
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let stackColor = NSColor.systemOrange
-        for (index, rect) in segmentRects().enumerated() {
-            let path = NSBezierPath(roundedRect: rect, xRadius: barHeight / 2, yRadius: barHeight / 2)
-            if segments == 1 {
-                NSColor.white.withAlphaComponent(0.55).setFill()
-            } else {
-                (index == showingIndex ? stackColor : stackColor.withAlphaComponent(0.4)).setFill()
-            }
-            path.fill()
+        StackStrip.draw(icons: icons, showing: showingIndex, in: bounds)
+    }
+}
+
+/// The stack strip above a stacked tile that isn't active; clicking an icon shows that window.
+final class StackDotsView: NSView {
+    var icons: [NSImage?] = [] { didSet { needsDisplay = true } }
+    var windows: [CGWindowID] = [] { didSet { needsDisplay = true } }
+    var showing: CGWindowID = 0 { didSet { needsDisplay = true } }
+    var onSelect: ((CGWindowID) -> Void)?
+
+    var intrinsicSize: NSSize { StackStrip.size(count: windows.count) }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let index = StackStrip.iconRects(count: windows.count, in: bounds).firstIndex(where: { $0.insetBy(dx: -3, dy: -4).contains(point) }) {
+            onSelect?(windows[index])
         }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        StackStrip.draw(icons: icons, showing: windows.firstIndex(of: showing) ?? 0, in: bounds)
     }
 }
 
@@ -653,37 +693,6 @@ final class ChipView: NSView {
                    options: [.truncatesLastVisibleLine, .usesLineFragmentOrigin])
         if hovered, let close = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close") {
             close.draw(in: closeRect)
-        }
-    }
-}
-
-/// Dots in the gap above a stacked tile that isn't active: one per window.
-final class StackDotsView: NSView {
-    var windows: [CGWindowID] = [] { didSet { needsDisplay = true } }
-    var showing: CGWindowID = 0 { didSet { needsDisplay = true } }
-    var onSelect: ((CGWindowID) -> Void)?
-
-    private let dot: CGFloat = 7, spacing: CGFloat = 6
-
-    var intrinsicSize: NSSize {
-        NSSize(width: CGFloat(windows.count) * (dot + spacing) - spacing + 16, height: 16)
-    }
-
-    private func dotRect(_ index: Int) -> NSRect {
-        NSRect(x: 8 + CGFloat(index) * (dot + spacing), y: bounds.midY - dot / 2, width: dot, height: dot)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if let index = windows.indices.first(where: { dotRect($0).insetBy(dx: -3, dy: -4).contains(point) }) {
-            onSelect?(windows[index])
-        }
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        for (index, id) in windows.enumerated() {
-            (id == showing ? NSColor.systemOrange : NSColor.systemOrange.withAlphaComponent(0.4)).setFill()
-            NSBezierPath(ovalIn: dotRect(index)).fill()
         }
     }
 }
