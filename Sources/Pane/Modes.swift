@@ -56,20 +56,31 @@ final class NoPeek {
     }
 }
 
-/// Clean Space: one window on a plain background, for sharing or presenting. The screen is
-/// covered by an opaque backdrop ordered just below the window; nothing is moved or closed,
-/// and windows brought to that screen appear above the backdrop.
+/// Privacy Mode (internally Clean Space): share some windows, cover the rest. A plain
+/// background replaces the desktop picture, below every window. Each hidden window gets its
+/// own opaque card laid exactly over it (app icon and name, never content), above normal
+/// windows; shown windows simply have no card. Nothing depends on how other apps' windows
+/// are stacked, which Pane can't reliably control.
 final class CleanSpace {
     private let settings = Settings.shared
     private var backdrop: NSPanel?
     private(set) var screen: NSScreen?
+    private var cards: [CGWindowID: (panel: NSPanel, view: PrivacyCardView)] = [:]
+    private var pills: [CGWindowID: (panel: NSPanel, view: EyeButton)] = [:]
     private var tokens: [NSObjectProtocol] = []
     var onAutomaticEnd: (() -> Void)?
-    /// A card was clicked, or a tile's eye button: show or hide that window.
+    /// A card's Show button (or the card itself), or a shown window's Hide pill, was clicked.
     var onToggle: ((CGWindowID) -> Void)?
-    private var eyes: [CGWindowID: (panel: NSPanel, view: EyeButton)] = [:]
 
     var isOn: Bool { backdrop != nil }
+
+    struct Card {
+        let window: CGWindowID
+        let rect: CGRect          // AX coordinates
+        let icon: NSImage?
+        let name: String
+        let hiddenCount: Int      // other windows stacked behind it
+    }
 
     init() {
         // Ends by itself when the Mac sleeps or locks, or the screen is disconnected.
@@ -82,90 +93,81 @@ final class CleanSpace {
             guard let self, let screen = self.screen, !NSScreen.screens.contains(screen) else { return }
             self.endAutomatically()
         })
-        // macOS posts the lock as a distributed notification.
         tokens.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"),
                                                                            object: nil, queue: .main) { [weak self] _ in
             self?.endAutomatically()
         })
     }
 
-    /// A window behind the backdrop, shown as a placeholder: where it is and which app,
-    /// never its content or title, so sharing the screen reveals nothing.
-    struct Card {
-        let window: CGWindowID
-        let rect: CGRect          // AX coordinates
-        let icon: NSImage?
-        let name: String
-        let hiddenCount: Int      // other windows stacked behind it
-    }
-
-    func start(on screen: NSScreen, below window: CGWindowID?) {
-        // Takes clicks: a card brings its window forward.
-        let panel = backdrop ?? WindowChrome.overlayPanel(clickThrough: false)
+    func start(on screen: NSScreen) {
+        let panel = backdrop ?? WindowChrome.overlayPanel(clickThrough: true)
+        // Just above the desktop picture and icons, below every window.
+        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
         panel.isOpaque = true
         panel.backgroundColor = settings.cleanSpaceBackground.color
-        if !(panel.contentView is CleanSpaceView) {
-            let view = CleanSpaceView()
-            view.onSelect = { [weak self] id in self?.onToggle?(id) }
-            panel.contentView = view
-        }
         panel.setFrame(screen.frame, display: true)
+        panel.orderFrontRegardless()
         backdrop = panel
         self.screen = screen
-        if let window { panel.order(.below, relativeTo: Int(window)) } else { panel.orderFront(nil) }
     }
 
-    /// Puts the backdrop just below a window (the lowest of the shown ones), or above
-    /// everything when no window is shown.
-    func order(below window: CGWindowID?) {
-        guard let backdrop else { return }
-        backdrop.backgroundColor = settings.cleanSpaceBackground.color
-        if let window { backdrop.order(.below, relativeTo: Int(window)) } else { backdrop.orderFront(nil) }
-        eyes.values.forEach { $0.panel.orderFrontRegardless() }
-    }
-
-    /// An eye button on every tile's top edge: show a hidden window, or hide a shown one.
-    func setEyes(_ tiles: [(window: CGWindowID, rect: CGRect, shown: Bool)]) {
-        let ids = Set(tiles.map(\.window))
-        for (id, entry) in eyes where !ids.contains(id) {
+    /// Covers each hidden window with its card.
+    func setCards(_ wanted: [Card]) {
+        backdrop?.backgroundColor = settings.cleanSpaceBackground.color
+        let ids = Set(wanted.map(\.window))
+        for (id, entry) in cards where !ids.contains(id) {
             entry.panel.orderOut(nil)
-            eyes[id] = nil
+            cards[id] = nil
         }
-        for tile in tiles {
-            let entry = eyes[tile.window] ?? {
+        for card in wanted {
+            let entry = cards[card.window] ?? {
                 let panel = WindowChrome.overlayPanel(clickThrough: false)
+                // Above normal windows, so it covers its window however apps are stacked.
                 panel.level = .floating
-                let view = EyeButton()
-                view.onClick = { [weak self] in self?.onToggle?(tile.window) }
+                let view = PrivacyCardView()
+                view.onShow = { [weak self] in self?.onToggle?(card.window) }
                 panel.contentView = view
                 return (panel, view)
             }()
-            eyes[tile.window] = entry
-            entry.view.isShown = tile.shown
-            let rect = WindowChrome.nsRect(tile.rect)
+            cards[card.window] = entry
+            entry.view.update(card: card, background: settings.cleanSpaceBackground)
+            entry.panel.setFrame(WindowChrome.nsRect(card.rect), display: true)
+            entry.panel.orderFrontRegardless()
+        }
+    }
+
+    /// A Hide pill on each shown window's top edge.
+    func setPills(_ shown: [(window: CGWindowID, rect: CGRect)]) {
+        let ids = Set(shown.map(\.window))
+        for (id, entry) in pills where !ids.contains(id) {
+            entry.panel.orderOut(nil)
+            pills[id] = nil
+        }
+        for item in shown {
+            let entry = pills[item.window] ?? {
+                let panel = WindowChrome.overlayPanel(clickThrough: false)
+                panel.level = .floating
+                let view = EyeButton()
+                view.isShown = true
+                view.onClick = { [weak self] in self?.onToggle?(item.window) }
+                panel.contentView = view
+                return (panel, view)
+            }()
+            pills[item.window] = entry
+            let rect = WindowChrome.nsRect(item.rect)
             let size = entry.view.intrinsicSize
-            // Straddling the tile's top edge, near its right corner.
+            // Straddling the window's top edge, near its right corner.
             entry.panel.setFrame(NSRect(x: rect.maxX - size.width - 24, y: rect.maxY - size.height / 2,
                                         width: size.width, height: size.height), display: true)
             entry.panel.orderFrontRegardless()
         }
     }
 
-    /// The placeholder cards drawn on the backdrop. Clicks pass through to the real window
-    /// underneath, which then comes forward as the presented one.
-    func setCards(_ cards: [Card]) {
-        guard let backdrop, let view = backdrop.contentView as? CleanSpaceView, let screen else { return }
-        view.background = settings.cleanSpaceBackground
-        view.cards = cards.map { card in
-            let ns = WindowChrome.nsRect(card.rect)
-            return .init(window: card.window, rect: ns.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY), icon: card.icon,
-                         name: card.name, hiddenCount: card.hiddenCount)
-        }
-    }
-
     func stop() {
-        eyes.values.forEach { $0.panel.orderOut(nil) }
-        eyes.removeAll()
+        cards.values.forEach { $0.panel.orderOut(nil) }
+        cards.removeAll()
+        pills.values.forEach { $0.panel.orderOut(nil) }
+        pills.removeAll()
         backdrop?.orderOut(nil)
         backdrop = nil
         screen = nil
@@ -178,45 +180,72 @@ final class CleanSpace {
     }
 }
 
-/// The Clean Space background with a placeholder card for each window behind it.
-final class CleanSpaceView: NSView {
-    var background: Settings.CleanSpaceBackground = .graphite { didSet { needsDisplay = true } }
-    var cards: [CleanSpace.Card] = [] { didSet { needsDisplay = true } }
-    var onSelect: ((CGWindowID) -> Void)?
+/// The opaque card over a hidden window: the background colour, a soft dashed outline, the
+/// app's icon and name, and a Show button. Clicking anywhere on it shows the window.
+final class PrivacyCardView: NSView {
+    var onShow: (() -> Void)?
+    private var card: CleanSpace.Card?
+    private var background: Settings.CleanSpaceBackground = .graphite
+    private var hovered = false { didSet { needsDisplay = true } }
 
-    override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if let card = cards.first(where: { $0.rect.contains(point) }) { onSelect?(card.window) }
+    func update(card: CleanSpace.Card, background: Settings.CleanSpaceBackground) {
+        self.card = card
+        self.background = background
+        needsDisplay = true
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseExited(with event: NSEvent) { hovered = false }
+    override func mouseUp(with event: NSEvent) { onShow?() }
+
     override func draw(_ dirtyRect: NSRect) {
+        guard let card else { return }
         background.color.setFill()
         bounds.fill()
-        // Light backgrounds get dark marks, dark ones light marks.
         let ink: NSColor = background == .mist ? .black : .white
-        for card in cards {
-            let rect = card.rect.insetBy(dx: 2, dy: 2)
-            let path = NSBezierPath(roundedRect: rect, xRadius: 16, yRadius: 16)
-            ink.withAlphaComponent(0.05).setFill()
-            path.fill()
-            ink.withAlphaComponent(0.22).setStroke()
-            path.lineWidth = 1.5
-            path.setLineDash([8, 6], count: 2, phase: 0)
-            path.stroke()
+        let rect = bounds.insetBy(dx: 2, dy: 2)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 16, yRadius: 16)
+        ink.withAlphaComponent(hovered ? 0.09 : 0.05).setFill()
+        path.fill()
+        ink.withAlphaComponent(hovered ? 0.4 : 0.22).setStroke()
+        path.lineWidth = 1.5
+        path.setLineDash([8, 6], count: 2, phase: 0)
+        path.stroke()
 
-            let side = min(72, rect.width * 0.3, rect.height * 0.3)
-            let showsName = rect.height > side + 50
-            let iconRect = NSRect(x: rect.midX - side / 2, y: rect.midY - side / 2 + (showsName ? 12 : 0), width: side, height: side)
-            card.icon?.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 0.85)
-            guard showsName else { continue }
-            var name = card.name
-            if card.hiddenCount > 0 { name += "  +\(card.hiddenCount)" }
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: ink.withAlphaComponent(0.7),
-            ]
-            let size = (name as NSString).size(withAttributes: attributes)
-            (name as NSString).draw(at: NSPoint(x: rect.midX - size.width / 2, y: iconRect.minY - size.height - 10), withAttributes: attributes)
+        let side = min(72, rect.width * 0.3, rect.height * 0.3)
+        let roomy = rect.height > side + 80
+        let iconRect = NSRect(x: rect.midX - side / 2, y: rect.midY - side / 2 + (roomy ? 22 : 0), width: side, height: side)
+        card.icon?.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 0.85)
+        guard roomy else { return }
+        var name = card.name
+        if card.hiddenCount > 0 { name += "  +\(card.hiddenCount)" }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: ink.withAlphaComponent(0.7),
+        ]
+        let size = (name as NSString).size(withAttributes: attributes)
+        let nameY = iconRect.minY - size.height - 10
+        (name as NSString).draw(at: NSPoint(x: rect.midX - size.width / 2, y: nameY), withAttributes: attributes)
+
+        // The Show button under the name.
+        let label = "Show" as NSString
+        let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        let labelSize = label.size(withAttributes: [.font: font])
+        let button = NSRect(x: rect.midX - (labelSize.width + 44) / 2, y: nameY - 36, width: labelSize.width + 44, height: 26)
+        NSColor.controlAccentColor.withAlphaComponent(hovered ? 1 : 0.85).setFill()
+        NSBezierPath(roundedRect: button, xRadius: 13, yRadius: 13).fill()
+        if let eye = NSImage(systemSymbolName: "eye", accessibilityDescription: "Show")?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold)) {
+            let white = NSImage(size: eye.size, flipped: false) { r in eye.draw(in: r); NSColor.white.set(); r.fill(using: .sourceAtop); return true }
+            white.draw(in: NSRect(x: button.minX + 12, y: button.midY - 7, width: 16, height: 14))
         }
+        label.draw(at: NSPoint(x: button.minX + 32, y: button.midY - labelSize.height / 2),
+                   withAttributes: [.font: font, .foregroundColor: NSColor.white])
     }
 }
 

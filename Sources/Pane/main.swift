@@ -41,9 +41,8 @@ final class ModeController {
         cleanWindow = window?.id
         // At first only the window you're in is shown; each other tile gets an eye to show it too.
         shown = window.map { [$0.id] } ?? []
-        arrangement = nil
         if let id = window?.id, Settings.shared.cleanSpaceFillsScreen { tiler.setFocusMode(true, window: id) }
-        cleanSpace.start(on: screen, below: window?.id)
+        cleanSpace.start(on: screen)
         update()
         Toast.show("Privacy Mode\(ShortcutStore.shared.hint(.cleanSpace, "to bring everything back"))")
         onChange?()
@@ -54,27 +53,22 @@ final class ModeController {
         if let id = cleanWindow { tiler.setFocusMode(false, window: id) }
         cleanWindow = nil
         shown = []
-        arrangement = nil
         if announce { Toast.show("Privacy Mode off") }
         onChange?()
     }
 
-    /// Shows a hidden window (it comes forward with focus) or hides a shown one.
+    /// Shows a hidden window (it comes forward with focus) or hides a shown one. Showing
+    /// one never hides another; only Hide does.
     private func toggleShown(_ id: CGWindowID) {
         if let index = shown.firstIndex(of: id) {
             shown.remove(at: index)
-            arrangement = nil
-            // Keystrokes must not keep going to a window that's now hidden.
-            if AX.focusedWindow()?.id == id, let next = shown.last {
-                tiler.activate(window: next)
-            }
-            update()
+            // Keystrokes must not keep going to a window that's now covered.
+            if AX.focusedWindow()?.id == id, let next = shown.last { tiler.activate(window: next) }
         } else {
             shown.append(id)
-            arrangement = nil
             tiler.activate(window: id)
-            update()
         }
+        update()
     }
 
     /// Called after every layout pass and focus change.
@@ -84,36 +78,48 @@ final class ModeController {
         guard cleanSpace.isOn, let screen = cleanSpace.screen else { return }
 
         let tiles = tiler.chromeTiles().filter { $0.screen == screen }
-        let onScreen = Set(tiles.flatMap(\.windows))
-        shown.removeAll { !onScreen.contains($0) && $0 != cleanWindow }
-        // Bringing a hidden window forward (⌘-Tab, the Dock) shows it.
-        if let id = focused?.id, onScreen.contains(id), !shown.contains(id) { shown.append(id) }
+        let tiled = Set(tiles.flatMap(\.windows))
+        let others = Self.untiledWindows(on: screen, excluding: tiled)
+        let present = tiled.union(others.map(\.id))
+        shown.removeAll { !present.contains($0) }
 
-        // Shown windows above the backdrop, hidden ones below: raise the shown windows
-        // (the active one last, so it stays in front), then slide the backdrop under them.
-        let signature = shown.map(String.init).joined(separator: ",") + "|\(focused?.id ?? 0)"
-        if signature != arrangement {
-            arrangement = signature
-            let order = shown.filter { $0 != focused?.id } + shown.filter { $0 == focused?.id }
-            order.forEach { tiler.raise(window: $0) }
-            cleanSpace.order(below: order.first)
-        }
-
-        let isShown: (TilingManager.ChromeTile) -> Bool = { tile in tile.windows.contains { self.shown.contains($0) } }
-        cleanSpace.setCards(tiles.filter { !isShown($0) }.map { tile in
+        // Every tile without a shown window is covered by a card; so is any window Pane
+        // doesn't tile, so nothing on that screen slips through.
+        var cards: [CleanSpace.Card] = tiles.filter { tile in !tile.windows.contains { shown.contains($0) } }.map { tile in
             CleanSpace.Card(window: tile.showing, rect: tile.rect, icon: tiler.appIcon(of: tile.showing),
                             name: tiler.appName(of: tile.showing)?.name ?? "Window", hiddenCount: tile.windows.count - 1)
-        })
-        cleanSpace.setEyes(tiles.map { tile in
-            let window = tile.windows.first { shown.contains($0) } ?? tile.showing
-            return (window, tile.rect, isShown(tile))
-        })
+        }
+        cards += others.filter { !shown.contains($0.id) }.map { window in
+            CleanSpace.Card(window: window.id, rect: window.frame, icon: window.icon, name: window.name, hiddenCount: 0)
+        }
+        cleanSpace.setCards(cards)
+
+        let shownTiles = tiles.compactMap { tile in tile.windows.first { shown.contains($0) }.map { ($0, tile.rect) } }
+        let shownOthers = others.filter { shown.contains($0.id) }.map { ($0.id, $0.frame) }
+        cleanSpace.setPills(shownTiles + shownOthers)
     }
 
-    /// Windows shown above the Privacy Mode backdrop, most recently shown last.
+    /// On-screen windows of other apps on a screen that Pane doesn't tile (floating,
+    /// excluded apps, dialogs), with their frames in AX coordinates.
+    private static func untiledWindows(on screen: NSScreen, excluding tiled: Set<CGWindowID>)
+        -> [(id: CGWindowID, frame: CGRect, icon: NSImage?, name: String)] {
+        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let top = (NSScreen.screens.first?.frame.maxY ?? 0) - screen.frame.maxY
+        let axScreen = CGRect(x: screen.frame.minX, y: top, width: screen.frame.width, height: screen.frame.height)
+        return info.compactMap { entry in
+            guard entry[kCGWindowLayer as String] as? Int == 0,
+                  let pid = entry[kCGWindowOwnerPID as String] as? pid_t, pid != getpid(),
+                  let id = entry[kCGWindowNumber as String] as? CGWindowID, !tiled.contains(id),
+                  let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat] else { return nil }
+            let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+            guard frame.width > 40, frame.height > 40, axScreen.contains(CGPoint(x: frame.midX, y: frame.midY)) else { return nil }
+            let app = NSRunningApplication(processIdentifier: pid)
+            return (id, frame, app?.icon, app?.localizedName ?? "Window")
+        }
+    }
+
+    /// Windows shown in Privacy Mode, most recently shown last.
     private var shown: [CGWindowID] = []
-    /// The last z-order arrangement applied, to avoid re-raising windows on every update.
-    private var arrangement: String?
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
