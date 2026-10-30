@@ -134,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindowController.shared.onLayoutSettingsChanged = { [weak self] in self?.tiler.relayout() }
         SettingsWindowController.shared.onRearrange = { [weak self] in self?.tiler.rearrange() }
         SettingsWindowController.shared.onForgetSizes = { [weak self] in self?.tiler.forgetLearnedSizes() }
+        SettingsWindowController.shared.onShowWelcome = { [weak self] in self?.showWelcome(firstRun: false) }
         SettingsWindowController.shared.onSettingsChanged = { [weak self] in
             self?.chrome.update()
             self?.modes.update()
@@ -141,18 +142,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerShortcuts()
         log.info("Launch: trusted \(AX.isTrusted), probe \(AX.probe().rawValue), frontmost \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "-", privacy: .public)")
 
+        if Settings.shared.hasOnboarded {
+            startWhenTrusted(prompt: true)
+        } else {
+            // Nothing moves until the welcome is done: it explains access and asks before tidying.
+            showWelcome(firstRun: true)
+        }
+    }
+
+    /// Seen again from Settings, "Not Now" leaves tiling as it was.
+    func showWelcome(firstRun: Bool) {
+        WelcomeController.shared.show { [weak self] tidy in
+            guard let self else { return }
+            if tidy || firstRun { self.tiler.setTilingEnabled(tidy) }
+            if !tidy && firstRun { Toast.show("Pane is in the menu bar · switch on Automatic Tiling when you're ready") }
+            self.startWhenTrusted(prompt: false)
+        }
+    }
+
+    /// Starts tiling now, or as soon as the user grants access in System Settings.
+    private func startWhenTrusted(prompt: Bool) {
         if AX.isUsable {
             tiler.start()
-        } else {
-            AX.requestTrust()
-            // Start as soon as the user grants access in System Settings.
-            trustTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
-                guard let self, AX.isUsable else { return }
-                timer.invalidate()
-                self.trustTimer = nil
-                self.tiler.start()
-                self.menu?.updateIcon()
-            }
+            menu?.updateIcon()
+            return
+        }
+        if prompt { AX.requestTrust() }
+        trustTimer?.invalidate()
+        trustTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+            guard let self, AX.isUsable else { return }
+            timer.invalidate()
+            self.trustTimer = nil
+            self.tiler.start()
+            self.menu?.updateIcon()
         }
     }
 

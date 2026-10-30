@@ -180,6 +180,12 @@ final class Settings {
 
     func forgetLearnedMinimums() { learnedMinimums = [:] }
 
+    /// The first-run welcome has been completed (or dismissed).
+    var hasOnboarded: Bool {
+        get { defaults.bool(forKey: "hasOnboarded") }
+        set { defaults.set(newValue, forKey: "hasOnboarded") }
+    }
+
     /// Dock desktop assignments apps had before Pane pinned them, by lowercased bundle ID.
     var previousSpaceBindings: [String: String] {
         get { defaults.dictionary(forKey: "previousSpaceBindings") as? [String: String] ?? [:] }

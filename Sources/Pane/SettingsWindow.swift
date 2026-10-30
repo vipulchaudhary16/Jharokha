@@ -11,6 +11,7 @@ final class SettingsWindowController {
     /// Smart placement was switched on: re-arrange now.
     var onRearrange: (() -> Void)?
     var onForgetSizes: (() -> Void)?
+    var onShowWelcome: (() -> Void)?
     /// Re-registers shortcuts after an edit; set by the app delegate.
     var onShortcutsChanged: (() -> Void)?
     var onSettingsChanged: (() -> Void)?
@@ -119,6 +120,9 @@ private struct GeneralSettings: View {
                     .onChange(of: hoverFocus) { _, value in settings.hoverFocus = value; onChange() }
             }
             Section("Startup") {
+                LabeledContent("Welcome guide") {
+                    Button("Show Again") { controller.onShowWelcome?() }
+                }
                 Toggle("Open Pane at login", isOn: $login)
                     .onChange(of: login) { _, value in
                         do {
