@@ -35,6 +35,18 @@ final class WindowChrome {
             guard let self, self.settings.veilsResizing else { return }
             self.veil.show(frames, icons: { self.tiler.appIcon(of: $0) })
         }
+        tiler.onVeiledMove = { [weak self] moves in
+            guard let self else { return }
+            self.veil.show(Dictionary(moves.map { ($0.id, $0.from) }, uniquingKeysWith: { a, _ in a }),
+                           icons: { self.tiler.appIcon(of: $0) }, instantly: true)
+            // Next turn of the run loop, so the veils are on screen before windows jump.
+            DispatchQueue.main.async {
+                self.tiler.commitVeiled(moves)
+                self.veil.glide(Dictionary(moves.map { ($0.id, $0.to) }, uniquingKeysWith: { a, _ in a })) {
+                    self.veil.hide(after: 0.12)
+                }
+            }
+        }
         tiler.onResizeEnd = { [weak self] in
             // If the drop starts a final animation, the veil goes when it settles.
             guard let self, !self.tiler.animator.isRunning else { return }

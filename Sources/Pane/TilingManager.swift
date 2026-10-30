@@ -47,6 +47,25 @@ final class TilingManager {
     var splitWeights: [String: SplitWeights] = [:]
     /// Called after every layout pass and focus change, for the window chrome and modes.
     var onLayoutChange: (() -> Void)?
+    /// A window changing size, moved under a veil rather than resized frame by frame.
+    struct VeiledMove {
+        let id: CGWindowID
+        let from: CGRect
+        let to: CGRect
+    }
+    private var veiledBatch: [VeiledMove] = []
+    /// Shows veils at `from`, then calls `commitVeiled` to move the windows beneath them.
+    var onVeiledMove: (([VeiledMove]) -> Void)?
+
+    /// Writes the windows of a veiled move in one step each, once their veils are up.
+    func commitVeiled(_ moves: [VeiledMove]) {
+        for move in moves {
+            guard let window = windows[move.id], targets[move.id]?.isClose(to: move.to) == true else { continue }
+            window.setFrame(move.to)
+            checkAccepted(move.id, requested: move.to, before: move.from)
+        }
+    }
+
     /// Every window animation has finished.
     var onAnimationsSettled: (() -> Void)?
     /// While an edge is dragged: where every tile of that screen is now (AX coordinates).
@@ -436,6 +455,11 @@ final class TilingManager {
         applyDepth += 1
         defer {
             applyDepth -= 1
+            if applyDepth == 0 && !veiledBatch.isEmpty {
+                let batch = veiledBatch
+                veiledBatch = []
+                onVeiledMove?(batch)
+            }
             onLayoutChange?()
         }
         let animated = animated && settings.animatesWindows
@@ -527,7 +551,12 @@ final class TilingManager {
             return
         }
         log.debug("place \(id) \(self.bundleIDs[id] ?? "?", privacy: .public) \(NSStringFromRect(frame), privacy: .public) -> \(NSStringFromRect(rect), privacy: .public) attempt \(write.attempts) animated \(animated)")
-        if animated {
+        if animated && settings.veilsResizing && onVeiledMove != nil && !frame.size.isClose(to: rect.size) {
+            // Resizing frame by frame makes apps redraw badly; the window jumps under a veil
+            // that glides instead (see `commitVeiled`).
+            animator.cancel(id)
+            veiledBatch.append(VeiledMove(id: id, from: frame, to: rect))
+        } else if animated {
             animator.animate(window, to: rect) { [weak self] in self?.checkAccepted(id, requested: rect, before: frame) }
         } else {
             animator.cancel(id)
