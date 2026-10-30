@@ -22,7 +22,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     func updateIcon() {
-        let paused = !settings.isTilingEnabled || tiler.isPausedForStageManager || !AX.isTrusted
+        let paused = !settings.isTilingEnabled || tiler.isPausedForStageManager || !AX.isTrusted || !tiler.accessUsable
         let image = NSImage(systemSymbolName: paused ? "rectangle.split.2x2" : "rectangle.split.2x2.fill",
                             accessibilityDescription: "Pane")
         image?.isTemplate = true
@@ -35,15 +35,17 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         menu.addItem(header(statusText))
-        if !AX.isTrusted {
+        if !AX.isUsable {
             menu.addItem(action("Grant Accessibility Access…", #selector(grantAccess)))
         }
         menu.addItem(toggle("Automatic Tiling", on: settings.isTilingEnabled, #selector(toggleTiling)))
+        menu.addItem(action("Re-apply Tiling", #selector(retile), key: "r", modifiers: [.control, .option]))
         menu.addItem(.separator())
 
         if let display {
             let current = settings.layout(for: display)
-            menu.addItem(header("Layout on This Screen"))
+            let shared = settings.appliesToAllScreens
+            menu.addItem(header(shared ? "Layout" : "Layout on This Screen"))
             for kind in LayoutKind.allCases {
                 let unavailable = display.shape == .vertical && kind == .columns
                 let entry = toggle(kind.title, on: current == kind, #selector(chooseLayout(_:)))
@@ -56,17 +58,19 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
             let counts = NSMenu()
             let capacity = settings.capacity(for: display)
-            let max = settings.maxCount(for: display)
+            // A shared count is offered up to what the roomiest screen holds.
+            let max = shared ? Display.current().map(settings.maxCount).max() ?? settings.maxCount(for: display)
+                             : settings.maxCount(for: display)
             for n in 1...5 {
                 let entry = toggle(n == 1 ? "1 Window" : "\(n) Windows", on: n == capacity, #selector(chooseCount(_:)))
                 entry.tag = n
                 entry.keyEquivalent = "\(n)"
                 entry.keyEquivalentModifierMask = [.control, .option, .command]
                 entry.isEnabled = n <= max
-                if n > max { entry.toolTip = "\(current.title) holds up to \(max) windows on this screen" }
+                if n > max { entry.toolTip = "\(current.title) holds up to \(max) windows here" }
                 counts.addItem(entry)
             }
-            menu.addItem(submenu("Windows on This Screen: \(capacity)", counts))
+            menu.addItem(submenu(shared ? "Windows per Screen: \(capacity)" : "Windows on This Screen: \(capacity)", counts))
         }
 
         let sizes = NSMenu()
@@ -84,6 +88,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             gaps.addItem(entry)
         }
         menu.addItem(submenu("Spacing", gaps))
+        menu.addItem(toggle("Apply Changes to All Screens", on: settings.appliesToAllScreens, #selector(toggleAllScreens)))
         menu.addItem(.separator())
 
         if let app = frontApp, let bundleID = app.bundleIdentifier, app.processIdentifier != getpid() {
@@ -91,7 +96,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(toggle("Tile \(name)", on: !settings.excludedBundleIDs.contains(bundleID), #selector(toggleFrontApp)))
         }
         menu.addItem(action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option]))
-        menu.addItem(action("Retile", #selector(retile), key: "r", modifiers: [.control, .option]))
         menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes)))
         menu.addItem(.separator())
 
@@ -102,6 +106,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     private var statusText: String {
         if !AX.isTrusted { return "Pane needs Accessibility access" }
+        if !tiler.accessUsable { return "Accessibility access isn't working: turn Pane off and on in System Settings" }
         if !settings.isTilingEnabled { return "Automatic tiling is off" }
         if tiler.isPausedForStageManager { return "Paused while Stage Manager is on" }
         let count = tiler.tiledWindowCount
@@ -122,6 +127,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func chooseLayout(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let kind = LayoutKind(rawValue: raw) else { return }
         tiler.setLayout(kind, on: display)
+    }
+
+    @objc private func toggleAllScreens() {
+        settings.appliesToAllScreens.toggle()
+        tiler.relayout()
     }
 
     @objc private func chooseCount(_ sender: NSMenuItem) { tiler.setCapacity(sender.tag, on: display) }
@@ -168,7 +178,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         ⌃⌥ ` / ⇧`     Show the next / previous window in this tile
         ⌃⌥ F           Float the active window, or tile it again
         ⌃⌥ Z           Focus mode
-        ⌃⌥ R           Retile
+        ⌃⌥ R           Re-apply tiling (puts every window back, re-attaches to all apps)
         ⌃⌥⌘ 1–5       Tile up to N windows on this screen
         Drag a window onto another tile to swap them, or onto another screen to move it.
         """

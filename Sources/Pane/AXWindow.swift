@@ -105,6 +105,18 @@ struct AXWindow {
 enum AX {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
+    /// After a rebuild, System Settings can show Pane as allowed while macOS still rejects
+    /// its calls. This asks the frontmost app for its windows to tell the two apart.
+    static func probe() -> AXError {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return .success }
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(AXUIElementCreateApplication(app.processIdentifier),
+                                             kAXWindowsAttribute as CFString, &value)
+    }
+
+    /// Trusted, and macOS actually accepts Pane's Accessibility calls.
+    static var isUsable: Bool { isTrusted && probe() != .apiDisabled }
+
     static func requestTrust() {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         AXIsProcessTrustedWithOptions([key: true] as CFDictionary)

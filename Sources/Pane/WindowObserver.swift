@@ -10,6 +10,8 @@ final class WindowObserver {
         case destroyed
         case focusChanged
         case movedOrResized
+        /// Switched to another Space (desktop); its windows may be listed a moment late.
+        case spaceChanged
         case other
     }
 
@@ -45,7 +47,10 @@ final class WindowObserver {
             self?.forget(app.processIdentifier)
             self?.onChange?(.destroyed)
         })
-        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification,
+        tokens.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.onChange?(.spaceChanged)
+        })
+        for name in [NSWorkspace.didActivateApplicationNotification,
                      NSWorkspace.didHideApplicationNotification, NSWorkspace.didUnhideApplicationNotification] {
             tokens.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 self?.onChange?(.focusChanged)
@@ -54,6 +59,13 @@ final class WindowObserver {
         tokens.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             self?.onChange?(.other)
         })
+    }
+
+    /// Drops every app's observer and subscribes again; an observer created while
+    /// Accessibility access was broken never delivers events.
+    func reattach() {
+        observers.keys.forEach(forget)
+        NSWorkspace.shared.runningApplications.forEach(observe)
     }
 
     /// Not every app forwards window-level notifications to the app element, so each window

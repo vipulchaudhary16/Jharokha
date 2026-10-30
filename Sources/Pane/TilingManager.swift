@@ -1,5 +1,9 @@
 import AppKit
+import OSLog
 import PaneCore
+
+/// `log stream --predicate 'subsystem == "dev.pane.Pane"'` follows what the tiler does.
+let log = Logger(subsystem: "dev.pane.Pane", category: "tiling")
 
 /// Keeps every tileable window in its place. On any window event it re-reads the windows
 /// on screen, reconciles them into per-display, per-Space tile state, and writes the frames
@@ -31,7 +35,9 @@ final class TilingManager {
 
     private var pendingRefresh: DispatchWorkItem?
     private var dragTimer: Timer?
-    private var stageManagerTimer: Timer?
+    private var healthTimer: Timer?
+    /// Whether macOS currently accepts Pane's Accessibility calls.
+    private(set) var accessUsable = true
     private(set) var isPausedForStageManager = false
     private(set) var isRunning = false
 
@@ -45,13 +51,17 @@ final class TilingManager {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        log.info("Tiling started")
         // An unresponsive app must not stall the tiler for the default 6 seconds.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
         observer.onChange = { [weak self] change in self?.handle(change) }
         observer.start()
         isPausedForStageManager = Self.isStageManagerOn
-        stageManagerTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        accessUsable = AX.isUsable
+        if !accessUsable { log.error("Accessibility access is granted but not usable yet") }
+        healthTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.checkStageManager()
+            self?.checkAccess()
         }
         refresh()
     }
@@ -60,7 +70,7 @@ final class TilingManager {
 
     private func handle(_ change: WindowObserver.Change) {
         switch change {
-        case .created:
+        case .created, .spaceChanged:
             scheduleRefresh(after: 0.05)
             // New windows often settle their role, size and position a moment after creation.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.refresh() }
@@ -103,6 +113,21 @@ final class TilingManager {
         guard on != isPausedForStageManager else { return }
         isPausedForStageManager = on
         if !on { refresh() }
+        onStateChange?()
+    }
+
+    /// When access starts working again (e.g. re-granted after a rebuild), observers created
+    /// while it was broken never fire, so re-attach and tile everything.
+    private func checkAccess() {
+        let usable = AX.isUsable
+        guard usable != accessUsable else { return }
+        accessUsable = usable
+        log.info("Accessibility access is \(usable ? "usable again" : "no longer usable", privacy: .public)")
+        if usable {
+            observer.reattach()
+            writes.removeAll()
+            refresh()
+        }
         onStateChange?()
     }
 
@@ -435,28 +460,59 @@ final class TilingManager {
     func isFocusMode(on display: Display) -> Bool { focusMode[display.key] != nil }
 
     /// Puts every window back in its place and says whether anything had moved.
+    /// Also re-attaches to every app and forgets refused writes, so it recovers tiling that
+    /// stalled, e.g. after Accessibility access was re-granted while Pane was running.
     func retile() {
-        guard canTile else { return }
+        guard AX.isUsable else {
+            log.error("Retile: Accessibility access is not usable (\(String(describing: AX.probe()), privacy: .public))")
+            AX.requestTrust()
+            Toast.show("Turn Pane off and on in Settings › Privacy & Security › Accessibility")
+            onStateChange?()
+            return
+        }
+        if !settings.isTilingEnabled { settings.isTilingEnabled = true }
+        if isRunning { observer.reattach() } else { start() }
+        guard !isPausedForStageManager else {
+            Toast.show("Paused while Stage Manager is on")
+            return
+        }
         let moved = targets.filter { id, target in
             guard let frame = windows[id]?.frame else { return false }
             return !frame.isClose(to: target)
         }.count
+        writes.removeAll()
+        limitedBy.removeAll()
         refresh()
-        Toast.show(moved == 0 ? "Everything was in place" : "Put \(moved) window\(moved == 1 ? "" : "s") back")
+        let tiled = tiledWindowCount
+        log.info("Retile: \(tiled) windows tiled, \(moved) had moved")
+        if tiled == 0 {
+            Toast.show("No windows to tile on this Space")
+        } else if moved == 0 {
+            Toast.show("Tiling \(tiled) window\(tiled == 1 ? "" : "s")")
+        } else {
+            Toast.show("Put \(moved) window\(moved == 1 ? "" : "s") back")
+        }
     }
 
     func setCapacity(_ count: Int, on display: Display? = nil) {
         guard let display = display ?? targetDisplay() else { return }
         let max = settings.maxCount(for: display)
-        settings.setCapacity(min(count, max), for: display)
+        // Stored unclamped: with a shared count, each screen takes as many as its layout allows.
+        settings.setCapacity(count, for: display)
         if count > max { Toast.show("This screen holds up to \(max) windows in \(settings.layout(for: display).title)") }
-        relayout(display)
+        relayout(scope(display))
     }
 
     func setLayout(_ kind: LayoutKind, on display: Display? = nil) {
         guard let display = display ?? targetDisplay() else { return }
         settings.setLayout(kind, for: display)
-        relayout(display)
+        relayout(scope(display))
+    }
+
+    /// The screens a layout or count change made on `display` applies to (nil = all).
+    /// Other Spaces pick the change up as soon as you switch to them.
+    private func scope(_ display: Display) -> Display? {
+        settings.appliesToAllScreens ? nil : display
     }
 
     /// Re-applies layout after a setting changed (layout, count, main size, spacing).

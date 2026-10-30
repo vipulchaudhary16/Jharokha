@@ -11,13 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tiler.onStateChange = { [weak self] in self?.menu?.updateIcon() }
         registerShortcuts()
 
-        if AX.isTrusted {
+        if AX.isUsable {
             tiler.start()
         } else {
             AX.requestTrust()
             // Start as soon as the user grants access in System Settings.
             trustTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
-                guard let self, AX.isTrusted else { return }
+                guard let self, AX.isUsable else { return }
                 timer.invalidate()
                 self.trustTimer = nil
                 self.tiler.start()

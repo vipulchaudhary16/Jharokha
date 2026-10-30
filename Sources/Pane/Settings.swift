@@ -58,23 +58,39 @@ final class Settings {
         defaults.dictionary(forKey: "learnedMinimums") as? [String: [Double]] ?? [:]
     }
 
+    /// Layout and window-count changes go to every screen (the default), or only to the
+    /// screen they were made on. Either way they apply to every Space of that screen.
+    var appliesToAllScreens: Bool {
+        get { defaults.object(forKey: "appliesToAllScreens") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "appliesToAllScreens") }
+    }
+
+    /// The defaults key for a per-screen setting: shared by all screens, or one screen's own,
+    /// falling back to the shared value until that screen is changed.
+    private func key(_ name: String, for display: Display, writing: Bool = false) -> String {
+        let own = "\(name).\(display.uuid)"
+        if appliesToAllScreens { return "\(name).all" }
+        return writing || defaults.object(forKey: own) != nil ? own : "\(name).all"
+    }
+
     func layout(for display: Display) -> LayoutKind {
-        defaults.string(forKey: "layout.\(display.uuid)").flatMap(LayoutKind.init(rawValue:))
+        defaults.string(forKey: key("layout", for: display)).flatMap(LayoutKind.init(rawValue:))
             ?? LayoutEngine.defaultKind(for: display.shape)
     }
 
     func setLayout(_ kind: LayoutKind, for display: Display) {
-        defaults.set(kind.rawValue, forKey: "layout.\(display.uuid)")
+        defaults.set(kind.rawValue, forKey: key("layout", for: display, writing: true))
     }
 
-    /// How many windows get their own tile on this display (default 3), clamped to what the layout allows.
+    /// How many windows get their own tile on this display (default 3), clamped to what the
+    /// layout allows there, so one shared count suits a laptop and a big monitor alike.
     func capacity(for display: Display) -> Int {
-        let requested = defaults.object(forKey: "count.\(display.uuid)") as? Int ?? 3
+        let requested = defaults.object(forKey: key("count", for: display)) as? Int ?? 3
         return min(max(requested, 1), maxCount(for: display))
     }
 
     func setCapacity(_ count: Int, for display: Display) {
-        defaults.set(count, forKey: "count.\(display.uuid)")
+        defaults.set(count, forKey: key("count", for: display, writing: true))
     }
 
     func maxCount(for display: Display) -> Int {
