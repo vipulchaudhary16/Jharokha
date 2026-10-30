@@ -305,6 +305,10 @@ final class TilingManager {
         }
         if let focused, windows[focused] != nil, !floating.contains(focused) { lastFocused = focused }
 
+        for display in displays {
+            let tiles = states[display.key]?.tiles.map { $0.windows.map { self.bundleIDs[$0] ?? "?" }.joined(separator: "+") } ?? []
+            log.debug("refresh \(display.screen.localizedName, privacy: .public): \(tiles.joined(separator: " | "), privacy: .public)")
+        }
         // Windows that are only briefly missing keep their tile but aren't moved.
         apply(displays, excluding: Set(transient.values.joined()))
         onStateChange?()
@@ -344,20 +348,15 @@ final class TilingManager {
     }
 
     /// Mission Control and App Exposé are drawn by the WindowManager process in windows above
-    /// the normal layer; otherwise WindowManager has nothing above it. (The Dock keeps a
-    /// permanent full-screen window named "Dock", so Dock windows only count when unnamed,
-    /// as older systems draw Mission Control and Launchpad that way.)
+    /// the normal layer; otherwise WindowManager has nothing above it. (Window names would
+    /// tell the Dock's own windows apart, but they need Screen Recording permission, so the
+    /// check relies on owner and layer alone.)
     static var isMissionControlActive: Bool {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        let screens = NSScreen.screens.map(\.frame.size)
         return info.contains { entry in
-            let owner = entry[kCGWindowOwnerName as String] as? String
-            let layer = entry[kCGWindowLayer as String] as? Int ?? 0
-            if owner == "WindowManager" { return layer > 0 && layer < 24 }
-            guard owner == "Dock", layer >= 18, (entry[kCGWindowName as String] as? String ?? "") != "Dock",
-                  let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat] else { return false }
-            let width = bounds["Width"] ?? 0, height = bounds["Height"] ?? 0
-            return screens.contains { width >= $0.width * 0.9 && height >= $0.height * 0.9 }
+            guard entry[kCGWindowOwnerName as String] as? String == "WindowManager",
+                  let layer = entry[kCGWindowLayer as String] as? Int else { return false }
+            return layer > 0 && layer < 24
         }
     }
 
@@ -484,9 +483,11 @@ final class TilingManager {
         // An app that keeps refusing the same frame (some apply their minimum a moment later)
         // would otherwise bounce forever: learn the size it insists on and stop writing.
         guard write.attempts <= 3 else {
+            log.debug("gave up on \(id) \(self.bundleIDs[id] ?? "?", privacy: .public) at \(NSStringFromRect(frame), privacy: .public) wanted \(NSStringFromRect(rect), privacy: .public)")
             learnMinimum(id, accepted: frame, requested: rect)
             return
         }
+        log.debug("place \(id) \(self.bundleIDs[id] ?? "?", privacy: .public) \(NSStringFromRect(frame), privacy: .public) -> \(NSStringFromRect(rect), privacy: .public) attempt \(write.attempts) animated \(animated)")
         if animated {
             animator.animate(window, to: rect) { [weak self] in self?.checkAccepted(id, requested: rect, before: frame) }
         } else {
@@ -500,6 +501,7 @@ final class TilingManager {
     /// hasn't changed yet may just be an app that resizes a moment later (Notes, Electron apps);
     /// those are caught by the repeated-refusal check in `place` once they settle.
     private func checkAccepted(_ id: CGWindowID, requested: CGRect, before: CGRect) {
+        log.debug("settled \(id) \(self.bundleIDs[id] ?? "?", privacy: .public) at \(NSStringFromRect(self.windows[id]?.frame ?? .zero), privacy: .public) wanted \(NSStringFromRect(requested), privacy: .public)")
         guard let accepted = windows[id]?.frame, !accepted.size.isClose(to: before.size) else { return }
         let wasChanged = minimumsChanged
         learnMinimum(id, accepted: accepted, requested: requested)

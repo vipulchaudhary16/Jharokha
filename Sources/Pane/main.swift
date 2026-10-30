@@ -90,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.modes.update()
         }
         registerShortcuts()
+        log.info("Launch: trusted \(AX.isTrusted), probe \(AX.probe().rawValue), frontmost \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "-", privacy: .public)")
 
         if AX.isUsable {
             tiler.start()
