@@ -129,8 +129,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             entry.subtitle = tiled ? "Its windows join the layout" : "Its windows stay where you put them"
             menu.addItem(entry)
         }
-        menu.addItem(action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option],
-                            icon: "arrow.up.left.and.arrow.down.right", subtitle: "Fill the screen with the active window"))
+        let focusOn = display.map(tiler.isFocusMode) ?? false
+        let focusItem = action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option],
+                               icon: "arrow.up.left.and.arrow.down.right",
+                               subtitle: focusOn ? "On: choose again to put every window back" : "Fill the screen with the active window")
+        focusItem.state = focusOn ? .on : .off
+        menu.addItem(focusItem)
         menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes),
                             icon: "arrow.counterclockwise", subtitle: "Re-learn how small each app can get"))
         menu.addItem(.separator())

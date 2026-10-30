@@ -445,15 +445,22 @@ final class TilingManager {
         Toast.show("Floating")
     }
 
+    /// Fills the screen with the active window; pressed again — from any window on that
+    /// screen — puts every window back.
     func toggleFocusMode() {
-        guard let c = context() else { return }
-        if focusMode[c.display.key] == c.window {
-            focusMode[c.display.key] = nil
+        guard canTile, let display = targetDisplay() else { return }
+        let displays = Display.current()
+        if let zoomed = focusMode.removeValue(forKey: display.key) {
+            apply(displays)
+            windows[zoomed]?.focus()
+            Toast.show("Focus mode off")
         } else {
+            guard let c = context() else { return }
             focusMode[c.display.key] = c.window
+            apply(c.displays)
+            windows[c.window]?.focus()
+            Toast.show("Focus mode · ⌃⌥Z to put windows back")
         }
-        apply(c.displays)
-        windows[c.window]?.focus()
         onStateChange?()
     }
 
@@ -497,6 +504,8 @@ final class TilingManager {
             guard let frame = windows[id]?.frame else { return false }
             return !frame.isClose(to: target)
         }.count
+        // "Every window back in its place" includes leaving focus mode.
+        focusMode.removeAll()
         writes.removeAll()
         limitedBy.removeAll()
         refresh()
