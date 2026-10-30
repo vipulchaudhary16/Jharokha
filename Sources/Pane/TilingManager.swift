@@ -510,25 +510,52 @@ final class TilingManager {
     /// fit, tiles fewer of them; the rest stack, so nothing extends off screen.
     private func solve(_ display: Display, _ state: inout ScreenTiles) -> [CGRect] {
         let reducedFrom = state.tiles.count
-        while true {
-            // A minimum learned on a bigger screen can't exceed this one: the window takes the
-            // full width or height here, rather than squeezing every other window into its stack.
-            let minimums = state.tiles.map { tile in
-                tile.windows.map(minimumSize).reduce(CGSize.zero) {
-                    CGSize(width: min(max($0.width, $1.width), display.rect.width),
-                           height: min(max($0.height, $1.height), display.rect.height))
-                }
+        let kind = settings.layout(for: display)
+        // A minimum learned on a bigger screen can't exceed this one: the window takes the
+        // full width or height here, rather than squeezing every other window into its stack.
+        func minimum(of tile: Tile) -> CGSize {
+            tile.windows.map(minimumSize).reduce(CGSize.zero) {
+                CGSize(width: min(max($0.width, $1.width), display.rect.width),
+                       height: min(max($0.height, $1.height), display.rect.height))
             }
-            if let rects = LayoutEngine.fit(kind: settings.layout(for: display), count: state.tiles.count,
-                                            in: display.rect, mainRatio: settings.mainRatio, gap: settings.gap,
-                                            shape: display.shape, minimums: minimums,
-                                            weights: splitWeights[weightsKey(display, count: state.tiles.count)] ?? [:]) {
+        }
+        func fit(_ minimums: [CGSize]) -> [CGRect]? {
+            LayoutEngine.fit(kind: kind, count: minimums.count, in: display.rect, mainRatio: settings.mainRatio,
+                             gap: settings.gap, shape: display.shape, minimums: minimums,
+                             weights: splitWeights[weightsKey(display, count: minimums.count)] ?? [:])
+        }
+        /// An order of the tiles in which they all fit, if there is one.
+        func fittingOrder(_ minimums: [CGSize]) -> [Int]? {
+            let identity = Array(minimums.indices)
+            if fit(minimums) != nil { return identity }
+            let order = LayoutEngine.assignBySize(tiles: frames(for: display, count: minimums.count), needs: minimums) {
+                fit($0.map { minimums[$0] }) != nil
+            }
+            return fit(order.map { minimums[$0] }) != nil ? order : nil
+        }
+
+        while true {
+            let minimums = state.tiles.map(minimum)
+            if let order = fittingOrder(minimums) {
+                if order != Array(state.tiles.indices) { state.arrange(order) }
                 if state.tiles.count < reducedFrom { notifyLimit(on: display, state: state) } else { limitedBy[display.key] = nil }
-                return rects
+                return fit(order.map { minimums[$0] }) ?? frames(for: display, count: state.tiles.count)
             }
             // A single window larger than the screen: let the app clamp it.
             guard state.tiles.count > 1 else { return frames(for: display, count: 1) }
-            state.normalize(capacity: state.tiles.count - 1)
+            // Stack the two tiles whose merge lets the rest fit, preferring the biggest windows
+            // together (they're the ones that can't share the screen), so everything else keeps a tile.
+            func area(_ size: CGSize) -> CGFloat { size.width * size.height }
+            var pairs: [(Int, Int)] = []
+            for a in state.tiles.indices { for b in state.tiles.indices where b > a { pairs.append((a, b)) } }
+            pairs.sort { area(minimums[$0.0]) + area(minimums[$0.1]) > area(minimums[$1.0]) + area(minimums[$1.1]) }
+            let merge = pairs.first { a, b in
+                var merged = minimums
+                merged[a] = CGSize(width: max(merged[a].width, merged[b].width), height: max(merged[a].height, merged[b].height))
+                merged.remove(at: b)
+                return fittingOrder(merged) != nil
+            } ?? pairs[0]
+            state.merge(merge.0, merge.1)
             solvedCapacity[display.key] = state.tiles.count
             // Merging must not bury the window you're using.
             if let focused = lastFocused { state.show(focused) }

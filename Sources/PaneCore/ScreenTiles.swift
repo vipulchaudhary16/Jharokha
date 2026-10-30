@@ -185,6 +185,14 @@ public struct ScreenTiles: Equatable, Sendable {
         normalize(capacity: capacity)
     }
 
+    /// Stacks tile `b` onto tile `a` (when windows can't all fit side by side).
+    public mutating func merge(_ a: Int, _ b: Int) {
+        guard a != b, tiles.indices.contains(a), tiles.indices.contains(b) else { return }
+        let other = tiles[b]
+        tiles[a].absorb(other)
+        tiles.remove(at: b)
+    }
+
     /// Reorders the tiles: position i gets the tile that was at `order[i]`. Stacks move whole.
     public mutating func arrange(_ order: [Int]) {
         guard order.count == tiles.count, Set(order) == Set(tiles.indices) else { return }
