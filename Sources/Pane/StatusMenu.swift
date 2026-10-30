@@ -92,6 +92,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         menu.addItem(action("Focus Mode", #selector(focusMode), key: "z", modifiers: [.control, .option]))
         menu.addItem(action("Retile", #selector(retile), key: "r", modifiers: [.control, .option]))
+        menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes)))
         menu.addItem(.separator())
 
         menu.addItem(toggle("Open at Login", on: SMAppService.mainApp.status == .enabled, #selector(toggleLogin)))
@@ -143,6 +144,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func focusMode() { tiler.toggleFocusMode() }
     @objc private func retile() { tiler.retile() }
+    @objc private func forgetSizes() { tiler.forgetLearnedSizes() }
 
     @objc private func toggleLogin() {
         do {

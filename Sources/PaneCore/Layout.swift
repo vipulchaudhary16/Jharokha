@@ -28,6 +28,28 @@ public enum Direction: Sendable, CaseIterable {
     case left, right, up, down
 }
 
+/// A layout is a tree of splits. Each split divides its rect along one axis between
+/// weighted children; leaves are tile indices. Minimum sizes are solved on this tree,
+/// so a window that needs more room takes it from its neighbours.
+indirect enum LayoutNode {
+    enum Axis { case x, y }
+
+    case leaf(Int)
+    case split(Axis, [(weight: CGFloat, node: LayoutNode)])
+
+    var transposed: LayoutNode {
+        switch self {
+        case .leaf: return self
+        case .split(let axis, let children):
+            return .split(axis == .x ? .y : .x, children.map { ($0.weight, $0.node.transposed) })
+        }
+    }
+
+    static func even(_ axis: Axis, _ range: Range<Int>) -> LayoutNode {
+        .split(axis, range.map { (1, .leaf($0)) })
+    }
+}
+
 public enum LayoutEngine {
     /// Screens at least this wide (in points) count as "bigger monitors" and hold more windows.
     public static let largeScreenWidth: CGFloat = 1800
@@ -52,58 +74,131 @@ public enum LayoutEngine {
         }
     }
 
-    /// Tile rects (top-left origin, y down, like the Accessibility API) for `count` windows.
-    /// Index 0 is the primary tile. `gap` is applied between tiles and at the outer edge.
+    /// Tile rects (top-left origin, y down, like the Accessibility API) for `count` windows,
+    /// ignoring minimum sizes. Index 0 is the primary tile.
     public static func frames(kind: LayoutKind, count: Int, in rect: CGRect, mainRatio: CGFloat,
                               gap: CGFloat, shape: ScreenShape) -> [CGRect] {
-        guard count > 0, rect.width > 0, rect.height > 0 else { return [] }
-        let kind = effectiveKind(kind, shape: shape)
-        let ratio = min(max(mainRatio, 0.2), 0.8)
-        let area = rect.insetBy(dx: gap / 2, dy: gap / 2)
+        fit(kind: kind, count: count, in: rect, mainRatio: mainRatio, gap: gap, shape: shape, minimums: []) ?? []
+    }
 
-        let raw: [CGRect]
+    /// Tile rects that respect each tile's minimum size, or nil when they cannot all fit.
+    /// `minimums[i]` is the minimum for tile i; missing entries mean no minimum.
+    public static func fit(kind: LayoutKind, count: Int, in rect: CGRect, mainRatio: CGFloat,
+                           gap: CGFloat, shape: ScreenShape, minimums: [CGSize]) -> [CGRect]? {
+        guard count > 0, rect.width > 0, rect.height > 0 else { return [] }
+        let ratio = min(max(mainRatio, 0.2), 0.8)
+        let tree = layoutTree(kind: effectiveKind(kind, shape: shape), count: count, ratio: ratio, shape: shape)
+        var rects = [CGRect](repeating: .null, count: count)
+        let mins = (0..<count).map { $0 < minimums.count ? minimums[$0] : .zero }
+        guard place(tree, in: rect.insetBy(dx: gap, dy: gap), gap: gap, minimums: mins, into: &rects) else { return nil }
+        return rects
+    }
+
+    static func layoutTree(kind: LayoutKind, count n: Int, ratio: CGFloat, shape: ScreenShape) -> LayoutNode {
         if shape == .vertical {
             // A vertical monitor is the landscape layout transposed: "left" becomes "top".
             // Rows on a vertical screen are landscape columns transposed.
             let landscapeKind: LayoutKind = kind == .rows ? .columns : kind
-            raw = landscape(landscapeKind, count, area.transposed, ratio, ultrawide: false).map(\.transposed)
-        } else {
-            raw = landscape(kind, count, area, ratio, ultrawide: shape == .ultrawide)
+            return landscapeTree(landscapeKind, n, ratio, ultrawide: false).transposed
         }
-        return raw.map { $0.insetBy(dx: gap / 2, dy: gap / 2).integral }
+        return landscapeTree(kind, n, ratio, ultrawide: shape == .ultrawide)
     }
 
-    private static func landscape(_ kind: LayoutKind, _ n: Int, _ r: CGRect, _ ratio: CGFloat,
-                                  ultrawide: Bool) -> [CGRect] {
-        if n == 1 { return [r] }
+    private static func landscapeTree(_ kind: LayoutKind, _ n: Int, _ ratio: CGFloat, ultrawide: Bool) -> LayoutNode {
+        if n == 1 { return .leaf(0) }
+        let rest = 1 - ratio
         switch kind {
         case .grid:
-            let (left, right) = r.splitX(ratio)
+            // Each new window takes half of the newest space; the fourth takes the
+            // bottom half of the primary's column.
             switch n {
-            case 2: return [left, right]
-            case 3:
-                let (rt, rb) = right.splitY(0.5)
-                return [left, rt, rb]
+            case 2: return .split(.x, [(ratio, .leaf(0)), (rest, .leaf(1))])
+            case 3: return .split(.x, [(ratio, .leaf(0)), (rest, .even(.y, 1..<3))])
             default:
-                let (lt, lb) = left.splitY(0.5)
-                let (rt, rb) = right.splitY(0.5)
-                return [lt, rt, rb, lb]
+                return .split(.x, [(ratio, .split(.y, [(1, .leaf(0)), (1, .leaf(3))])),
+                                   (rest, .even(.y, 1..<3))])
             }
         case .columns:
-            let (first, rest) = r.splitX(ratio)
-            return [first] + rest.equalColumns(n - 1)
+            return .split(.x, [(ratio, .leaf(0))] + (1..<n).map { (rest / CGFloat(n - 1), .leaf($0)) })
         case .rows:
-            let (first, rest) = r.splitY(ratio)
-            return [first] + rest.equalRows(n - 1)
+            return .split(.y, [(ratio, .leaf(0))] + (1..<n).map { (rest / CGFloat(n - 1), .leaf($0)) })
         case .side:
             if ultrawide && n >= 3 {
                 // Two large windows on the left, the rest in a quarter-width column.
-                let (main, column) = r.splitX(0.75)
-                let (a, b) = main.splitX(ratio)
-                return [a, b] + column.equalRows(n - 2)
+                return .split(.x, [(0.75 * ratio, .leaf(0)), (0.75 * rest, .leaf(1)), (0.25, .even(.y, 2..<n))])
             }
-            let (main, column) = r.splitX(ratio)
-            return [main] + column.equalRows(n - 1)
+            return .split(.x, [(ratio, .leaf(0)), (rest, n == 2 ? .leaf(1) : .even(.y, 1..<n))])
+        }
+    }
+
+    private static func minimumSize(of node: LayoutNode, _ minimums: [CGSize], gap: CGFloat) -> CGSize {
+        switch node {
+        case .leaf(let i): return minimums[i]
+        case .split(let axis, let children):
+            let sizes = children.map { minimumSize(of: $0.node, minimums, gap: gap) }
+            let gaps = gap * CGFloat(children.count - 1)
+            return axis == .x
+                ? CGSize(width: sizes.map(\.width).reduce(0, +) + gaps, height: sizes.map(\.height).max() ?? 0)
+                : CGSize(width: sizes.map(\.width).max() ?? 0, height: sizes.map(\.height).reduce(0, +) + gaps)
+        }
+    }
+
+    private static func place(_ node: LayoutNode, in rect: CGRect, gap: CGFloat, minimums: [CGSize],
+                              into rects: inout [CGRect]) -> Bool {
+        switch node {
+        case .leaf(let i):
+            let need = minimums[i]
+            guard need.width <= rect.width + 0.5, need.height <= rect.height + 0.5 else { return false }
+            rects[i] = rect
+            return true
+        case .split(let axis, let children):
+            let length = axis == .x ? rect.width : rect.height
+            let available = length - gap * CGFloat(children.count - 1)
+            let mins = children.map { child -> CGFloat in
+                let size = minimumSize(of: child.node, minimums, gap: gap)
+                return axis == .x ? size.width : size.height
+            }
+            guard let sizes = allocate(available, weights: children.map(\.weight), minimums: mins) else { return false }
+            // Round cumulative offsets, not sizes, so the children always end exactly at the far edge.
+            var start: CGFloat = 0
+            var cumulative: CGFloat = 0
+            for (index, child) in children.enumerated() {
+                cumulative += sizes[index]
+                let end = index == children.count - 1 ? available : cumulative.rounded()
+                let childRect = axis == .x
+                    ? CGRect(x: rect.minX + start + gap * CGFloat(index), y: rect.minY, width: end - start, height: rect.height)
+                    : CGRect(x: rect.minX, y: rect.minY + start + gap * CGFloat(index), width: rect.width, height: end - start)
+                guard place(child.node, in: childRect, gap: gap, minimums: minimums, into: &rects) else { return false }
+                start = end
+            }
+            return true
+        }
+    }
+
+    /// Shares `total` by weight, but no child gets less than its minimum; the space
+    /// a constrained child takes comes out of the others in proportion to their weights.
+    static func allocate(_ total: CGFloat, weights: [CGFloat], minimums: [CGFloat]) -> [CGFloat]? {
+        guard minimums.reduce(0, +) <= total + 0.5 else { return nil }
+        var fixed = [Bool](repeating: false, count: weights.count)
+        var sizes = [CGFloat](repeating: 0, count: weights.count)
+        while true {
+            let freeWeight = zip(weights, fixed).filter { !$0.1 }.map(\.0).reduce(0, +)
+            let remaining = total - zip(minimums, fixed).filter(\.1).map(\.0).reduce(0, +)
+            guard freeWeight > 0 else {
+                // Every child is at its minimum; hand the leftover out by weight.
+                let weightSum = weights.reduce(0, +)
+                return zip(minimums, weights).map { $0 + (total - minimums.reduce(0, +)) * $1 / weightSum }
+            }
+            var changed = false
+            for i in weights.indices where !fixed[i] {
+                sizes[i] = remaining * weights[i] / freeWeight
+                if sizes[i] < minimums[i] {
+                    sizes[i] = minimums[i]
+                    fixed[i] = true
+                    changed = true
+                }
+            }
+            if !changed { return sizes }
         }
     }
 
@@ -147,37 +242,5 @@ public enum LayoutEngine {
     /// Index of the rect containing `point`, if any.
     public static func tile(at point: CGPoint, in rects: [CGRect]) -> Int? {
         rects.firstIndex { $0.contains(point) }
-    }
-}
-
-extension CGRect {
-    var transposed: CGRect { CGRect(x: minY, y: minX, width: height, height: width) }
-
-    func splitX(_ ratio: CGFloat) -> (CGRect, CGRect) {
-        let w = (width * ratio).rounded()
-        return (CGRect(x: minX, y: minY, width: w, height: height),
-                CGRect(x: minX + w, y: minY, width: width - w, height: height))
-    }
-
-    func splitY(_ ratio: CGFloat) -> (CGRect, CGRect) {
-        let h = (height * ratio).rounded()
-        return (CGRect(x: minX, y: minY, width: width, height: h),
-                CGRect(x: minX, y: minY + h, width: width, height: height - h))
-    }
-
-    func equalColumns(_ n: Int) -> [CGRect] {
-        (0..<n).map { i in
-            let x0 = (minX + width * CGFloat(i) / CGFloat(n)).rounded()
-            let x1 = (minX + width * CGFloat(i + 1) / CGFloat(n)).rounded()
-            return CGRect(x: x0, y: minY, width: x1 - x0, height: height)
-        }
-    }
-
-    func equalRows(_ n: Int) -> [CGRect] {
-        (0..<n).map { i in
-            let y0 = (minY + height * CGFloat(i) / CGFloat(n)).rounded()
-            let y1 = (minY + height * CGFloat(i + 1) / CGFloat(n)).rounded()
-            return CGRect(x: minX, y: y0, width: width, height: y1 - y0)
-        }
     }
 }

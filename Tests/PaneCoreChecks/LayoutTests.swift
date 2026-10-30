@@ -83,4 +83,34 @@ struct LayoutTests {
         expect(LayoutEngine.neighbor(of: 2, in: f, direction: .up) == 1)
         expect(LayoutEngine.neighbor(of: 0, in: f, direction: .left) == nil)
     }
+
+    // Docker Desktop's case: the bottom row needs more height than its share.
+    func minimumTakesRoomFromNeighbours() {
+        let f = LayoutEngine.fit(kind: .rows, count: 3, in: screen, mainRatio: 0.5, gap: 0, shape: .standard,
+                                 minimums: [.zero, .zero, CGSize(width: 0, height: 400)])
+        expect(f != nil)
+        guard let f else { return }
+        expect(f[2].height == 400)
+        expect(f[0].height + f[1].height == 400)
+        expect(f[0].height > f[1].height) // the primary keeps its larger share
+        expect(f[2].maxY == screen.maxY)
+    }
+
+    func minimumsThatCannotFitReturnNil() {
+        let tooTall = [CGSize.zero, .zero, CGSize(width: 0, height: 900)]
+        expect(LayoutEngine.fit(kind: .rows, count: 3, in: screen, mainRatio: 0.5, gap: 0, shape: .standard,
+                                minimums: tooTall) == nil)
+        let tooWide = [CGSize(width: 700, height: 0), CGSize(width: 400, height: 0)]
+        expect(LayoutEngine.fit(kind: .grid, count: 2, in: screen, mainRatio: 0.5, gap: 0, shape: .standard,
+                                minimums: tooWide) == nil)
+    }
+
+    func minimumWidthInGridColumn() {
+        // Tile 2 sits in the right column; its width minimum widens the whole column.
+        let f = LayoutEngine.fit(kind: .grid, count: 3, in: screen, mainRatio: 0.5, gap: 8, shape: .standard,
+                                 minimums: [.zero, .zero, CGSize(width: 700, height: 0)])
+        expect(f?[2].width == 700)
+        expect(f?[1].width == 700)
+        expect(f?[0].maxX == 1000 - 8 - 700 - 8)
+    }
 }

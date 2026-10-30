@@ -37,6 +37,27 @@ final class Settings {
         set { defaults.set(Array(newValue).sorted(), forKey: "excludedBundleIDs") }
     }
 
+    /// The smallest size each app has been seen to accept, learned from frames it refused.
+    /// Kept on this Mac only.
+    func learnedMinimum(for bundleID: String) -> CGSize {
+        guard let pair = learnedMinimums[bundleID], pair.count == 2 else { return .zero }
+        return CGSize(width: pair[0], height: pair[1])
+    }
+
+    func setLearnedMinimum(_ size: CGSize, for bundleID: String) {
+        var all = learnedMinimums
+        all[bundleID] = [Double(size.width), Double(size.height)]
+        defaults.set(all, forKey: "learnedMinimums")
+    }
+
+    func forgetLearnedMinimums() {
+        defaults.removeObject(forKey: "learnedMinimums")
+    }
+
+    private var learnedMinimums: [String: [Double]] {
+        defaults.dictionary(forKey: "learnedMinimums") as? [String: [Double]] ?? [:]
+    }
+
     func layout(for display: Display) -> LayoutKind {
         defaults.string(forKey: "layout.\(display.uuid)").flatMap(LayoutKind.init(rawValue:))
             ?? LayoutEngine.defaultKind(for: display.shape)
