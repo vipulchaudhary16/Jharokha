@@ -122,6 +122,13 @@ final class Settings {
         set { defaults.set(newValue, forKey: "noPeekBlur") }
     }
 
+    /// Clean Space zooms the shared window to fill the screen, instead of keeping its tile
+    /// with the other windows shown as placeholder cards.
+    var cleanSpaceFillsScreen: Bool {
+        get { defaults.object(forKey: "cleanSpaceFillsScreen") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "cleanSpaceFillsScreen") }
+    }
+
     var cleanSpaceBackground: CleanSpaceBackground {
         get { defaults.string(forKey: "cleanSpaceBackground").flatMap(CleanSpaceBackground.init(rawValue:)) ?? .graphite }
         set { defaults.set(newValue.rawValue, forKey: "cleanSpaceBackground") }

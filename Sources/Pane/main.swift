@@ -38,8 +38,10 @@ final class ModeController {
         }
         guard let screen = screen ?? NSScreen.main else { return }
         cleanWindow = window?.id
-        if let id = window?.id { tiler.setFocusMode(true, window: id) }
+        presented = window?.id
+        if let id = window?.id, Settings.shared.cleanSpaceFillsScreen { tiler.setFocusMode(true, window: id) }
         cleanSpace.start(on: screen, below: window?.id)
+        update()
         Toast.show("Clean Space\(ShortcutStore.shared.hint(.cleanSpace, "to bring everything back"))")
         onChange?()
     }
@@ -62,9 +64,21 @@ final class ModeController {
             let height = NSScreen.screens.first?.frame.maxY ?? 0
             if screen.frame.contains(NSPoint(x: frame.midX, y: height - frame.midY)) {
                 cleanSpace.update(below: focused?.id)
+                presented = focused?.id
             }
         }
+        if cleanSpace.isOn, let screen = cleanSpace.screen {
+            // Every other tile on that screen becomes a placeholder card.
+            let cards = tiler.chromeTiles().filter { $0.screen == screen && !$0.windows.contains { $0 == presented } }.map { tile in
+                CleanSpace.Card(rect: tile.rect, icon: tiler.appIcon(of: tile.showing),
+                                name: tiler.appName(of: tile.showing)?.name ?? "Window", hiddenCount: tile.windows.count - 1)
+            }
+            cleanSpace.setCards(cards)
+        }
     }
+
+    /// The window shown above the Clean Space backdrop.
+    private var presented: CGWindowID?
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {

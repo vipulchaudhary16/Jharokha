@@ -386,7 +386,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private static func cleanSpaceSubtitle(_ on: Bool) -> String {
-        on ? "On: switch off to bring everything back\(ShortcutStore.shared.hint(.cleanSpace))" : "One window on a plain screen, for sharing\(ShortcutStore.shared.hint(.cleanSpace))"
+        on ? "On: switch off to bring everything back\(ShortcutStore.shared.hint(.cleanSpace))" : "Share one window; the rest show as app cards\(ShortcutStore.shared.hint(.cleanSpace))"
     }
 
     @objc private func quit() { NSApp.terminate(nil) }

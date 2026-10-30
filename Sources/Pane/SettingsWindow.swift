@@ -58,6 +58,7 @@ private struct GeneralSettings: View {
     @State private var dim = Settings.shared.noPeekDim
     @State private var blur = Settings.shared.noPeekBlur
     @State private var background = Settings.shared.cleanSpaceBackground
+    @State private var cleanFills = Settings.shared.cleanSpaceFillsScreen
 
     var body: some View {
         Form {
@@ -94,6 +95,10 @@ private struct GeneralSettings: View {
                     ForEach(Settings.CleanSpaceBackground.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .onChange(of: background) { _, value in settings.cleanSpaceBackground = value; onChange() }
+                Toggle("Fill the screen with the shared window", isOn: $cleanFills)
+                    .onChange(of: cleanFills) { _, value in settings.cleanSpaceFillsScreen = value; onChange() }
+                Text("Off: the shared window keeps its place, and the others show as cards with their app's icon and name — never their content.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
