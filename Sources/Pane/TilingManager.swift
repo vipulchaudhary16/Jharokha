@@ -10,23 +10,23 @@ let log = Logger(subsystem: "dev.pane.Pane", category: "tiling")
 /// that differ. Commands mutate that state and apply it directly.
 final class TilingManager {
     private let observer = WindowObserver()
-    private let settings = Settings.shared
+    let settings = Settings.shared
 
-    private var states: [String: ScreenTiles] = [:]
-    private var windows: [CGWindowID: AXWindow] = [:]
+    var states: [String: ScreenTiles] = [:]
+    var windows: [CGWindowID: AXWindow] = [:]
     /// Opening order; the earliest window on a screen is its primary.
     private var firstSeen: [CGWindowID: Int] = [:]
     private var seenCounter = 0
-    private var floating: Set<CGWindowID> = []
+    var floating: Set<CGWindowID> = []
     /// Focus mode: per display key, the window that fills the screen.
-    private var focusMode: [String: CGWindowID] = [:]
+    var focusMode: [String: CGWindowID] = [:]
     /// The frame Pane last asked each window to take.
-    private var targets: [CGWindowID: CGRect] = [:]
+    var targets: [CGWindowID: CGRect] = [:]
     /// The last tiled window that had focus; new windows stack into its tile on a full screen.
-    private var lastFocused: CGWindowID?
+    var lastFocused: CGWindowID?
     private var bundleIDs: [CGWindowID: String] = [:]
     /// The tile rects last applied per display key, after minimum sizes were solved.
-    private var appliedRects: [String: [CGRect]] = [:]
+    var appliedRects: [String: [CGRect]] = [:]
     /// Repeated writes of the same frame to one window; see `place`.
     private var writes: [CGWindowID: (target: CGRect, attempts: Int)] = [:]
     private var minimumsChanged = false
@@ -35,12 +35,20 @@ final class TilingManager {
 
     private var pendingRefresh: DispatchWorkItem?
     private var dragTimer: Timer?
-    private let dragOverlay = DragOverlay()
+    let dragOverlay = DragOverlay()
     private var iconCache: [pid_t: NSImage] = [:]
     /// A window moved while the mouse was down: look for the one being dragged.
-    private var windowMovedDuringPress = false
+    var windowMovedDuringPress = false
     /// The tiled window being dragged, once identified, and the display it came from.
-    private var dragged: (id: CGWindowID, displayKey: String)?
+    var dragged: (id: CGWindowID, displayKey: String)?
+    /// A tiled window being resized by its edge, and the frame last applied for it.
+    var resizing: (id: CGWindowID, displayKey: String, frame: CGRect)?
+    /// Split weights the user set by resizing, per display, Space, layout and count.
+    var splitWeights: [String: SplitWeights] = [:]
+    /// Called after every layout pass and focus change, for the window chrome and modes.
+    var onLayoutChange: (() -> Void)?
+    /// Called when a drag or resize starts (true) and ends (false).
+    var onDragChange: ((Bool) -> Void)?
     private var healthTimer: Timer?
     /// Whether macOS currently accepts Pane's Accessibility calls.
     private(set) var accessUsable = true
@@ -113,9 +121,12 @@ final class TilingManager {
             timer.invalidate()
             self.dragTimer = nil
             self.dragOverlay.hide()
-            self.dragged = nil
-            self.windowMovedDuringPress = false
+            let wasDragging = self.dragged != nil || self.resizing != nil
             self.handleDrop()
+            self.dragged = nil
+            self.resizing = nil
+            self.windowMovedDuringPress = false
+            if wasDragging { self.onDragChange?(false) }
             self.refresh()
         }
     }
@@ -139,7 +150,15 @@ final class TilingManager {
     private func updateDragPreview() {
         guard canTile, windowMovedDuringPress else { return }
         let displays = Display.current()
-        if dragged == nil { dragged = findDraggedWindow(displays) }
+        if dragged == nil && resizing == nil {
+            dragged = findDraggedWindow(displays)
+            if dragged == nil { beginResizeIfNeeded(displays) }
+            if dragged != nil || resizing != nil { onDragChange?(true) }
+        }
+        if resizing != nil {
+            updateLiveResize(displays)
+            return
+        }
         guard let dragged, let source = states[dragged.displayKey],
               let sourceTile = source.tileIndex(of: dragged.id) else { return }
 
@@ -159,17 +178,19 @@ final class TilingManager {
                 let target = underMouse.flatMap { $0 == sourceTile ? nil : $0 }
                 for (index, rect) in rects.enumerated() where state.tiles.indices.contains(index) {
                     let showing = state.tiles[index].showing
+                    let stacking = NSEvent.modifierFlags.isSuperset(of: [.option, .command])
                     if index == target {
                         let other = appName(of: showing)?.name ?? "that window"
-                        tiles.append(.init(rect: rect, role: .target, icon: draggedIcon, caption: "Drop to swap with \(other)"))
+                        tiles.append(.init(rect: rect, role: .target, icon: draggedIcon,
+                                           caption: stacking ? "Add to stack with \(other)" : "Drop to swap with \(other)"))
                     } else if index == sourceTile {
-                        if let target {
+                        if let target, !stacking {
                             let movingBack = state.tiles[target].showing
                             tiles.append(.init(rect: rect, role: .source, icon: appIcon(of: movingBack),
                                                caption: "\(appName(of: movingBack)?.name ?? "It") moves here"))
                         } else {
                             tiles.append(.init(rect: rect, role: .source, icon: draggedIcon,
-                                               caption: mouseDisplay?.key == display.key ? "Release to put back" : nil))
+                                               caption: target == nil && mouseDisplay?.key == display.key ? "Release to put back" : nil))
                         }
                     } else {
                         tiles.append(.init(rect: rect, role: .normal, icon: appIcon(of: showing), caption: nil))
@@ -224,7 +245,7 @@ final class TilingManager {
         onStateChange?()
     }
 
-    private var canTile: Bool {
+    var canTile: Bool {
         isRunning && settings.isTilingEnabled && AX.isTrusted && !isPausedForStageManager
     }
 
@@ -232,7 +253,8 @@ final class TilingManager {
 
     func refresh() {
         pendingRefresh?.cancel()
-        guard canTile else { return }
+        // Modes like No peek follow focus even while tiling is off.
+        guard canTile else { onLayoutChange?(); return }
         guard !Self.isMouseDown else { beginDragWatch(); return }
 
         let displays = Display.current()
@@ -297,28 +319,29 @@ final class TilingManager {
 
     // MARK: - Apply
 
-    private func frames(for display: Display, count: Int) -> [CGRect] {
+    func frames(for display: Display, count: Int) -> [CGRect] {
         LayoutEngine.frames(kind: settings.layout(for: display), count: count, in: display.rect,
                             mainRatio: settings.mainRatio, gap: settings.gap, shape: display.shape)
     }
 
     /// The tile rects in use on a display (minimum sizes already solved).
-    private func rects(for display: Display) -> [CGRect] {
+    func rects(for display: Display) -> [CGRect] {
         appliedRects[display.key] ?? frames(for: display, count: states[display.key]?.tiles.count ?? 0)
     }
 
     /// Writes the layout of each display; windows already in place are left alone,
     /// so the move/resize events caused by these writes settle after one pass.
     /// A pass that learns a new minimum size is followed by another, which makes room for it.
-    private func apply(_ displays: [Display]) {
+    func apply(_ displays: [Display], excluding excluded: CGWindowID? = nil) {
+        defer { onLayoutChange?() }
         for _ in 0..<3 {
             minimumsChanged = false
-            displays.forEach(applyOnce)
+            displays.forEach { applyOnce($0, excluding: excluded) }
             if !minimumsChanged { return }
         }
     }
 
-    private func applyOnce(_ display: Display) {
+    private func applyOnce(_ display: Display, excluding excluded: CGWindowID?) {
         guard var state = states[display.key] else { return }
         let rects = solve(display, &state)
         states[display.key] = state
@@ -327,10 +350,10 @@ final class TilingManager {
         let full = display.rect.insetBy(dx: settings.gap, dy: settings.gap)
         for (index, tile) in state.tiles.enumerated() where rects.indices.contains(index) {
             // Stacked windows sit behind the showing one at the same size; place them first.
-            for id in tile.windows where id != tile.showing {
+            for id in tile.windows where id != tile.showing && id != excluded {
                 place(id, id == zoomed ? full : rects[index])
             }
-            place(tile.showing, tile.showing == zoomed ? full : rects[index])
+            if tile.showing != excluded { place(tile.showing, tile.showing == zoomed ? full : rects[index]) }
         }
     }
 
@@ -346,7 +369,8 @@ final class TilingManager {
             }
             if let rects = LayoutEngine.fit(kind: settings.layout(for: display), count: state.tiles.count,
                                             in: display.rect, mainRatio: settings.mainRatio, gap: settings.gap,
-                                            shape: display.shape, minimums: minimums) {
+                                            shape: display.shape, minimums: minimums,
+                                            weights: splitWeights[weightsKey(display, count: state.tiles.count)] ?? [:]) {
                 if state.tiles.count < reducedFrom { notifyLimit(on: display, state: state) } else { limitedBy[display.key] = nil }
                 return rects
             }
@@ -356,7 +380,7 @@ final class TilingManager {
         }
     }
 
-    private func minimumSize(_ id: CGWindowID) -> CGSize {
+    func minimumSize(_ id: CGWindowID) -> CGSize {
         bundleIDs[id].map(settings.learnedMinimum) ?? .zero
     }
 
@@ -431,6 +455,11 @@ final class TilingManager {
     private func handleDrop() {
         let mouse = NSEvent.axMouseLocation
         let displays = Display.current()
+        if resizing != nil {
+            finishResize(displays)
+            return
+        }
+        let addToStack = NSEvent.modifierFlags.isSuperset(of: [.option, .command])
         for display in displays {
             guard var state = states[display.key] else { continue }
             for id in state.showingWindows {
@@ -447,7 +476,11 @@ final class TilingManager {
                 } else if let from = state.tileIndex(of: id),
                           let to = LayoutEngine.tile(at: mouse, in: rects(for: display)),
                           from != to {
-                    state.swapShowing(from, to)
+                    if addToStack {
+                        state.move(id, toTile: to, capacity: settings.capacity(for: display))
+                    } else {
+                        state.swapShowing(from, to)
+                    }
                     states[display.key] = state
                 }
                 apply(displays)
@@ -459,14 +492,14 @@ final class TilingManager {
 
     // MARK: - Commands
 
-    private struct Context {
+    struct Context {
         let displays: [Display]
         let display: Display
         let tile: Int
         let window: CGWindowID
     }
 
-    private func context() -> Context? {
+    func context() -> Context? {
         guard canTile, let id = AX.focusedWindow()?.id else { return nil }
         let displays = Display.current()
         for display in displays {
@@ -580,7 +613,7 @@ final class TilingManager {
         onStateChange?()
     }
 
-    private func enterFocusMode(_ id: CGWindowID, on display: Display, _ displays: [Display]) {
+    func enterFocusMode(_ id: CGWindowID, on display: Display, _ displays: [Display]) {
         states[display.key]?.show(id)
         focusMode[display.key] = id
         apply(displays)

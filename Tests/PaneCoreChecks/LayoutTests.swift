@@ -113,4 +113,49 @@ struct LayoutTests {
         expect(f?[1].width == 700)
         expect(f?[0].maxX == 1000 - 8 - 700 - 8)
     }
+
+    func resize(_ kind: LayoutKind, _ n: Int, tile: Int, to frame: CGRect, weights: SplitWeights = [:]) -> [CGRect] {
+        let w = LayoutEngine.resize(tile: tile, to: frame, kind: kind, count: n, in: screen, mainRatio: 0.5, gap: 0,
+                                    shape: .standard, minimums: [], weights: weights)
+        return LayoutEngine.fit(kind: kind, count: n, in: screen, mainRatio: 0.5, gap: 0, shape: .standard,
+                                minimums: [], weights: w) ?? []
+    }
+
+    func draggingAnEdgeMovesTheNeighbour() {
+        var frame = frames(.columns, 2)[0]
+        frame.size.width += 100
+        let f = resize(.columns, 2, tile: 0, to: frame)
+        expect(f[0].width == 600)
+        expect(f[1].minX == 600 && f[1].width == 400)
+    }
+
+    func resizingOnlyAffectsTheSplitOnThatEdge() {
+        // Grid of 4: tile 0's bottom edge belongs to the left column's split only.
+        var frame = frames(.grid, 4)[0]
+        frame.size.height += 100
+        let f = resize(.grid, 4, tile: 0, to: frame)
+        expect(f[0].height == 500)
+        expect(f[3].minY == 525 && f[3].height == 300)
+        expect(f[1] == frames(.grid, 4)[1]) // the right column is untouched
+    }
+
+    func dragFromTheLeftEdgeGrowsLeftward() {
+        var frame = frames(.columns, 3)[1] // middle column, x 500..750
+        frame.origin.x -= 100
+        frame.size.width += 100
+        let f = resize(.columns, 3, tile: 1, to: frame)
+        expect(f[0].width == 400)
+        expect(f[1].minX == 400 && f[1].width == 350)
+        expect(f[2] == frames(.columns, 3)[2])
+    }
+
+    func outerEdgesNeverMoveAndNeighboursKeepAFloor() {
+        var frame = frames(.columns, 2)[1]
+        frame.size.width += 200 // the right screen edge: nothing to move
+        expect(resize(.columns, 2, tile: 1, to: frame) == frames(.columns, 2))
+        var grow = frames(.columns, 2)[0]
+        grow.size.width = 990 // would crush the neighbour
+        let f = resize(.columns, 2, tile: 0, to: grow)
+        expect(f[1].width == LayoutEngine.minimumTileLength)
+    }
 }

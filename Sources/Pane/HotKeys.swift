@@ -5,39 +5,45 @@ import Carbon
 final class HotKeys {
     static let shared = HotKeys()
 
-    /// ⌃⌥, the default prefix.
-    static let prefix = UInt32(controlKey | optionKey)
-
-    enum Key: UInt32 {
-        case left = 123, right = 124, down = 125, up = 126
-        case returnKey = 36, rightBracket = 30, leftBracket = 33, grave = 50
-        case f = 3, z = 6, r = 15
-        case one = 18, two = 19, three = 20, four = 21, five = 23
-    }
-
     private var handlers: [UInt32: () -> Void] = [:]
     private var refs: [EventHotKeyRef] = []
     private var nextID: UInt32 = 1
     private var installed = false
+    /// Combinations another app already holds, found when registering.
+    private(set) var taken: Set<Shortcut> = []
 
-    func register(_ key: Key, modifiers: UInt32 = prefix, _ handler: @escaping () -> Void) {
-        installIfNeeded()
-        let id = EventHotKeyID(signature: OSType(0x5041_4E45), id: nextID) // 'PANE'
-        var ref: EventHotKeyRef?
-        guard RegisterEventHotKey(key.rawValue, modifiers, id, GetApplicationEventTarget(), 0, &ref) == noErr,
-              let ref else {
-            NSLog("Pane: shortcut for key \(key) is already taken by another app")
-            return
+    /// Registers every enabled shortcut from the store, replacing the previous set.
+    func apply(_ store: ShortcutStore, perform: @escaping (ShortcutAction) -> Void) {
+        unregisterAll()
+        taken = []
+        guard store.areEnabled else { return }
+        for action in ShortcutAction.allCases {
+            guard let shortcut = store.shortcut(for: action) else { continue }
+            if !register(shortcut, { perform(action) }) { taken.insert(shortcut) }
         }
-        refs.append(ref)
-        handlers[nextID] = handler
-        nextID += 1
     }
 
+    /// Unregisters everything, e.g. while the shortcut editor records a new combination.
     func unregisterAll() {
         refs.forEach { UnregisterEventHotKey($0) }
         refs.removeAll()
         handlers.removeAll()
+    }
+
+    @discardableResult
+    private func register(_ shortcut: Shortcut, _ handler: @escaping () -> Void) -> Bool {
+        installIfNeeded()
+        let id = EventHotKeyID(signature: OSType(0x5041_4E45), id: nextID) // 'PANE'
+        var ref: EventHotKeyRef?
+        guard RegisterEventHotKey(shortcut.keyCode, shortcut.modifiers, id, GetApplicationEventTarget(), 0, &ref) == noErr,
+              let ref else {
+            log.error("Shortcut \(shortcut.display, privacy: .public) is already taken by another app")
+            return false
+        }
+        refs.append(ref)
+        handlers[nextID] = handler
+        nextID += 1
+        return true
     }
 
     private func installIfNeeded() {

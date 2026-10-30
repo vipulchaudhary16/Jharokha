@@ -17,7 +17,7 @@ This needs only the Command Line Tools, not Xcode. Builds are signed with the "P
 - `Sources/PaneCore`: the pure layout engine (Grid, Columns, Rows, Side, plus ultrawide and vertical handling) and the per-screen tile and stack model.
 - `Sources/Pane`: the app. It has the Accessibility window wrapper, window observer, tiling manager, hotkeys, menu bar and toasts.
 
-## Shortcuts (⌃⌥ prefix)
+## Shortcuts (⌃⌥ prefix, remappable in Settings › Keyboard)
 
 | Keys | Action |
 |---|---|
@@ -25,12 +25,19 @@ This needs only the Command Line Tools, not Xcode. Builds are signed with the "P
 | ↩ | Make the active window primary |
 | ] / [ | Activate the next / previous window |
 | ` / ⇧` | Next / previous window in this tile's stack |
-| F | Float the active window, or tile it again |
+| ⌥⇥ / ⌥⇧⇥ (no ⌃) | Tab View: every window, screen by screen |
+| = / − / 0 | Grow / shrink the active window, reset sizes |
+| F / ⇧F | Float the active window / always float its app |
 | Z | Focus mode |
-| R | Retile |
+| D | No peek: fade every other window |
+| P | Clean Space: one window on a plain screen |
+| R | Re-apply tiling |
 | ⌘1–⌘5 | Tile up to N windows on this screen |
 
-Drag a window onto another tile to swap the two, or onto another screen to move it there.
+**Mouse:**
+- Drag a window onto another tile to swap the two, or onto another screen to move it there. Hold ⌥⌘ while dragging to add it to that tile's stack instead.
+- Drag the edge between two windows to resize both.
+- Rest the pointer on the grip above the active window to open its stack chips or quick actions.
 
 ## Credits
 

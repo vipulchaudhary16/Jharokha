@@ -24,6 +24,9 @@ public enum ScreenShape: Sendable, Equatable {
     }
 }
 
+/// User-adjusted split weights, by split path within a layout tree.
+public typealias SplitWeights = [String: [Double]]
+
 public enum Direction: Sendable, CaseIterable {
     case left, right, up, down
 }
@@ -36,6 +39,13 @@ indirect enum LayoutNode {
 
     case leaf(Int)
     case split(Axis, [(weight: CGFloat, node: LayoutNode)])
+
+    var leaves: Set<Int> {
+        switch self {
+        case .leaf(let i): return [i]
+        case .split(_, let children): return children.reduce(into: []) { $0.formUnion($1.node.leaves) }
+        }
+    }
 
     var transposed: LayoutNode {
         switch self {
@@ -83,15 +93,79 @@ public enum LayoutEngine {
 
     /// Tile rects that respect each tile's minimum size, or nil when they cannot all fit.
     /// `minimums[i]` is the minimum for tile i; missing entries mean no minimum.
+    /// `weights` holds the user's resized splits (see `resize`).
     public static func fit(kind: LayoutKind, count: Int, in rect: CGRect, mainRatio: CGFloat,
-                           gap: CGFloat, shape: ScreenShape, minimums: [CGSize]) -> [CGRect]? {
+                           gap: CGFloat, shape: ScreenShape, minimums: [CGSize],
+                           weights: SplitWeights = [:]) -> [CGRect]? {
+        var splits: [Split] = []
+        return solve(kind: kind, count: count, in: rect, mainRatio: mainRatio, gap: gap, shape: shape,
+                     minimums: minimums, weights: weights, splits: &splits)
+    }
+
+    private static func solve(kind: LayoutKind, count: Int, in rect: CGRect, mainRatio: CGFloat, gap: CGFloat,
+                              shape: ScreenShape, minimums: [CGSize], weights: SplitWeights,
+                              splits: inout [Split]) -> [CGRect]? {
         guard count > 0, rect.width > 0, rect.height > 0 else { return [] }
         let ratio = min(max(mainRatio, 0.2), 0.8)
         let tree = layoutTree(kind: effectiveKind(kind, shape: shape), count: count, ratio: ratio, shape: shape)
         var rects = [CGRect](repeating: .null, count: count)
         let mins = (0..<count).map { $0 < minimums.count ? minimums[$0] : .zero }
-        guard place(tree, in: rect.insetBy(dx: gap, dy: gap), gap: gap, minimums: mins, into: &rects) else { return nil }
+        var context = PlaceContext(gap: gap, minimums: mins, weights: weights)
+        guard place(tree, path: "", in: rect.insetBy(dx: gap, dy: gap), &context, into: &rects) else { return nil }
+        splits = context.splits
         return rects
+    }
+
+    /// Smallest share of a split a window can be resized down to, besides its app's minimum.
+    public static let minimumTileLength: CGFloat = 120
+
+    /// Split weights after tile `index` is resized to `frame`, by dragging one of its edges or
+    /// with the keyboard. Each edge that moved shifts the split boundary it sits on, taking room
+    /// from (or giving it to) the neighbour on the other side; the screen's outer edges never move.
+    public static func resize(tile index: Int, to frame: CGRect, kind: LayoutKind, count: Int, in rect: CGRect,
+                              mainRatio: CGFloat, gap: CGFloat, shape: ScreenShape, minimums: [CGSize],
+                              weights: SplitWeights) -> SplitWeights {
+        var splits: [Split] = []
+        guard let rects = solve(kind: kind, count: count, in: rect, mainRatio: mainRatio, gap: gap, shape: shape,
+                                minimums: minimums, weights: weights, splits: &splits),
+              rects.indices.contains(index) else { return weights }
+        let old = rects[index]
+        let mins = (0..<count).map { $0 < minimums.count ? minimums[$0] : .zero }
+        var result = weights
+        let tolerance: CGFloat = 2
+
+        // (axis, moved edge is the far one?, delta)
+        let moves: [(LayoutNode.Axis, Bool, CGFloat)] = [
+            (.x, false, frame.minX - old.minX), (.x, true, frame.maxX - old.maxX),
+            (.y, false, frame.minY - old.minY), (.y, true, frame.maxY - old.maxY),
+        ]
+        for (axis, far, delta) in moves where abs(delta) > tolerance {
+            // The deepest split on this axis whose boundary is this edge of the tile.
+            guard let split = splits.last(where: { split in
+                guard split.axis == axis, let k = split.children.firstIndex(where: { $0.leaves.contains(index) }) else { return false }
+                let child = split.children[k].rect
+                if far {
+                    return k + 1 < split.children.count && abs((axis == .x ? child.maxX : child.maxY) - (axis == .x ? old.maxX : old.maxY)) <= tolerance
+                }
+                return k > 0 && abs((axis == .x ? child.minX : child.minY) - (axis == .x ? old.minX : old.minY)) <= tolerance
+            }), let k = split.children.firstIndex(where: { $0.leaves.contains(index) }) else { continue }
+
+            var sizes = split.children.map { axis == .x ? $0.rect.width : $0.rect.height }
+            let floors = split.children.map { child -> CGFloat in
+                let m = minimumSize(of: child.node, mins, gap: gap)
+                return max(axis == .x ? m.width : m.height, minimumTileLength)
+            }
+            // Growing a far edge (delta > 0) or a near edge (delta < 0) takes room from the neighbour.
+            let neighbor = far ? k + 1 : k - 1
+            var change = far ? delta : -delta
+            change = min(change, sizes[neighbor] - floors[neighbor])
+            change = max(change, floors[k] - sizes[k])
+            sizes[k] += change
+            sizes[neighbor] -= change
+            let total = sizes.reduce(0, +)
+            result[split.path] = sizes.map { Double($0 / total) }
+        }
+        return result
     }
 
     static func layoutTree(kind: LayoutKind, count n: Int, ratio: CGFloat, shape: ScreenShape) -> LayoutNode {
@@ -143,11 +217,31 @@ public enum LayoutEngine {
         }
     }
 
-    private static func place(_ node: LayoutNode, in rect: CGRect, gap: CGFloat, minimums: [CGSize],
+    /// A split as placed: used to find which boundary a resized edge sits on.
+    struct Split {
+        struct Child {
+            let node: LayoutNode
+            let rect: CGRect
+            let leaves: Set<Int>
+        }
+        let path: String
+        let axis: LayoutNode.Axis
+        let children: [Child]
+    }
+
+    private struct PlaceContext {
+        let gap: CGFloat
+        let minimums: [CGSize]
+        let weights: SplitWeights
+        var splits: [Split] = []
+    }
+
+    private static func place(_ node: LayoutNode, path: String, in rect: CGRect, _ context: inout PlaceContext,
                               into rects: inout [CGRect]) -> Bool {
+        let gap = context.gap
         switch node {
         case .leaf(let i):
-            let need = minimums[i]
+            let need = context.minimums[i]
             guard need.width <= rect.width + 0.5, need.height <= rect.height + 0.5 else { return false }
             rects[i] = rect
             return true
@@ -155,22 +249,31 @@ public enum LayoutEngine {
             let length = axis == .x ? rect.width : rect.height
             let available = length - gap * CGFloat(children.count - 1)
             let mins = children.map { child -> CGFloat in
-                let size = minimumSize(of: child.node, minimums, gap: gap)
+                let size = minimumSize(of: child.node, context.minimums, gap: gap)
                 return axis == .x ? size.width : size.height
             }
-            guard let sizes = allocate(available, weights: children.map(\.weight), minimums: mins) else { return false }
+            // Weights the user set by resizing replace the layout's own, if they still fit this split.
+            var weights = children.map(\.weight)
+            if let custom = context.weights[path], custom.count == children.count {
+                weights = custom.map { CGFloat($0) }
+            }
+            guard let sizes = allocate(available, weights: weights, minimums: mins) else { return false }
             // Round cumulative offsets, not sizes, so the children always end exactly at the far edge.
             var start: CGFloat = 0
             var cumulative: CGFloat = 0
+            var placed: [Split.Child] = []
             for (index, child) in children.enumerated() {
                 cumulative += sizes[index]
                 let end = index == children.count - 1 ? available : cumulative.rounded()
                 let childRect = axis == .x
                     ? CGRect(x: rect.minX + start + gap * CGFloat(index), y: rect.minY, width: end - start, height: rect.height)
                     : CGRect(x: rect.minX, y: rect.minY + start + gap * CGFloat(index), width: rect.width, height: end - start)
-                guard place(child.node, in: childRect, gap: gap, minimums: minimums, into: &rects) else { return false }
+                guard place(child.node, path: path + "/\(index)", in: childRect, &context, into: &rects) else { return false }
+                placed.append(.init(node: child.node, rect: childRect, leaves: child.node.leaves))
                 start = end
             }
+            // Parents are recorded after their children, so `last(where:)` finds the deepest split.
+            context.splits.insert(Split(path: path, axis: axis, children: placed), at: 0)
             return true
         }
     }

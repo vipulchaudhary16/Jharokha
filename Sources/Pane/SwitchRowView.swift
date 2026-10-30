@@ -100,3 +100,50 @@ final class SwitchRowView: NSView {
         NSBezierPath(roundedRect: bounds.insetBy(dx: 5, dy: 1), xRadius: 6, yRadius: 6).fill()
     }
 }
+
+/// A menu row with a slider, e.g. how dark No peek makes other windows.
+final class SliderRowView: NSView {
+    var onChange: ((Double) -> Void)?
+    private let label = NSTextField(labelWithString: "")
+    private let value = NSTextField(labelWithString: "")
+    private let slider: NSSlider
+    private let format: (Double) -> String
+
+    init(title: String, value initial: Double, range: ClosedRange<Double>, format: @escaping (Double) -> String) {
+        slider = NSSlider(value: initial, minValue: range.lowerBound, maxValue: range.upperBound, target: nil, action: nil)
+        self.format = format
+        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 30))
+        autoresizingMask = [.width]
+        label.stringValue = title
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = .secondaryLabelColor
+        value.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        value.textColor = .secondaryLabelColor
+        value.stringValue = format(initial)
+        slider.controlSize = .small
+        slider.isContinuous = true
+        slider.target = self
+        slider.action = #selector(moved)
+        [label, slider, value].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            addSubview($0)
+        }
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 54),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            slider.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 10),
+            slider.centerYAnchor.constraint(equalTo: centerYAnchor),
+            value.leadingAnchor.constraint(equalTo: slider.trailingAnchor, constant: 8),
+            value.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            value.centerYAnchor.constraint(equalTo: centerYAnchor),
+            value.widthAnchor.constraint(equalToConstant: 34),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func moved() {
+        value.stringValue = format(slider.doubleValue)
+        onChange?(slider.doubleValue)
+    }
+}

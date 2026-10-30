@@ -7,6 +7,8 @@ import ServiceManagement
 final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let tiler: TilingManager
+    private let modes: ModeController
+    private let chrome: WindowChrome
     private let settings = Settings.shared
     /// The app in front when the menu opened; the menu bar does not activate Pane, so this is the user's app.
     private var frontApp: NSRunningApplication?
@@ -21,8 +23,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var appItemBundleID: String?
     private var display: Display?
 
-    init(tiler: TilingManager) {
+    init(tiler: TilingManager, modes: ModeController, chrome: WindowChrome) {
         self.tiler = tiler
+        self.modes = modes
+        self.chrome = chrome
         super.init()
         let menu = NSMenu()
         menu.delegate = self
@@ -173,6 +177,71 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         focusRow = row
         menu.addItem(focusItem)
+
+        let noPeekOn = modes.noPeek.isOn
+        let dimRow = SliderRowView(title: "Dim", value: settings.noPeekDim, range: 0.1...0.9) { "\(Int(($0 * 100).rounded()))%" }
+        dimRow.onChange = { [weak self] value in
+            self?.settings.noPeekDim = value
+            self?.modes.update()
+        }
+        let dimItem = NSMenuItem()
+        dimItem.view = dimRow
+        dimItem.isHidden = !noPeekOn
+        menu.addItem(switchItem("No Peek", subtitle: Self.noPeekSubtitle(noPeekOn),
+                                icon: MenuIcons.symbol("circle.lefthalf.filled"), isOn: noPeekOn) { [weak self, weak dimItem] _ in
+            guard let self else { return nil }
+            self.modes.toggleNoPeek()
+            dimItem?.isHidden = !self.modes.noPeek.isOn
+            return Self.noPeekSubtitle(self.modes.noPeek.isOn)
+        }.item)
+        menu.addItem(dimItem)
+
+        let cleanOn = modes.cleanSpace.isOn
+        menu.addItem(switchItem("Clean Space", subtitle: Self.cleanSpaceSubtitle(cleanOn),
+                                icon: MenuIcons.symbol("sparkles.rectangle.stack"), isOn: cleanOn) { [weak self] _ in
+            guard let self else { return nil }
+            // Act after the menu closes, so the window to present is the user's, not the menu.
+            menu.cancelTracking()
+            DispatchQueue.main.async { self.modes.toggleCleanSpace() }
+            return Self.cleanSpaceSubtitle(!cleanOn)
+        }.item)
+        menu.addItem(.separator())
+
+        let highlights = NSMenu()
+        for style in Settings.HighlightStyle.allCases {
+            let entry = toggle(style.title, on: settings.highlightStyle == style, #selector(chooseHighlight(_:)))
+            entry.representedObject = style.rawValue
+            highlights.addItem(entry)
+        }
+        highlights.addItem(.separator())
+        for color in Settings.HighlightColor.allCases {
+            let entry = toggle(color.title, on: settings.highlightColor == color, #selector(chooseHighlightColor(_:)))
+            entry.image = Self.swatch(color.color)
+            entry.representedObject = color.rawValue
+            highlights.addItem(entry)
+        }
+        let highlightItem = submenu("Highlight: \(settings.highlightStyle.title)", highlights)
+        highlightItem.image = MenuIcons.symbol("square.dashed")
+        highlightItem.subtitle = "Border or glow around tiled windows"
+        menu.addItem(highlightItem)
+        menu.addItem(switchItem("Quick Actions Above Windows", subtitle: "A grip on the active window; hover it for actions",
+                                icon: MenuIcons.symbol("ellipsis.rectangle"), isOn: settings.showsQuickActions) { [weak self] on in
+            self?.settings.showsQuickActions = on
+            self?.chrome.update()
+            return nil
+        }.item)
+        menu.addItem(switchItem("Hover Focus", subtitle: "Activate a window when the pointer rests on it",
+                                icon: MenuIcons.symbol("cursorarrow.motionlines"), isOn: settings.hoverFocus) { [weak self] on in
+            self?.settings.hoverFocus = on
+            self?.chrome.update()
+            return nil
+        }.item)
+        menu.addItem(.separator())
+
+        if let display, tiler.hasCustomSizes(on: display) {
+            menu.addItem(action("Reset Window Sizes", #selector(resetSizes), key: "0", modifiers: [.control, .option],
+                                icon: "arrow.up.left.and.down.right.magnifyingglass", subtitle: "Back to equal shares and your main size"))
+        }
         menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes),
                             icon: "arrow.counterclockwise", subtitle: "Re-learn how small each app can get"))
         menu.addItem(.separator())
@@ -190,6 +259,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         menu.addItem(loginItem)
         menu.addItem(action("Keyboard Shortcuts…", #selector(showShortcuts), icon: "keyboard"))
+        menu.addItem(action("Settings…", #selector(showSettings), key: ",", modifiers: [.command], icon: "gearshape"))
         menu.addItem(action("Quit Pane", #selector(quit), key: "q", modifiers: [.command], icon: "xmark.circle"))
     }
 
@@ -289,22 +359,36 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func retile() { tiler.retile() }
     @objc private func forgetSizes() { tiler.forgetLearnedSizes() }
 
-    @objc private func showShortcuts() {
-        let alert = NSAlert()
-        alert.messageText = "Keyboard Shortcuts"
-        alert.informativeText = """
-        ⌃⌥ ← → ↑ ↓   Swap with the window in that direction (past the edge: next display)
-        ⌃⌥ ↩          Make the active window primary
-        ⌃⌥ ] / [       Activate the next / previous window
-        ⌃⌥ ` / ⇧`     Show the next / previous window in this tile
-        ⌃⌥ F           Float the active window, or tile it again
-        ⌃⌥ Z           Focus mode
-        ⌃⌥ R           Re-apply tiling (puts every window back, re-attaches to all apps)
-        ⌃⌥⌘ 1–5       Tile up to N windows on this screen
-        Drag a window onto another tile to swap them, or onto another screen to move it.
-        """
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+    @objc private func showShortcuts() { SettingsWindowController.shared.show(tab: .keyboard) }
+    @objc private func showSettings() { SettingsWindowController.shared.show(tab: .general) }
+    @objc private func resetSizes() { tiler.resetSizes(on: display) }
+
+    @objc private func chooseHighlight(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let style = Settings.HighlightStyle(rawValue: raw) else { return }
+        settings.highlightStyle = style
+        chrome.update()
+    }
+
+    @objc private func chooseHighlightColor(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let color = Settings.HighlightColor(rawValue: raw) else { return }
+        settings.highlightColor = color
+        chrome.update()
+    }
+
+    private static func swatch(_ color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
+            return true
+        }
+    }
+
+    private static func noPeekSubtitle(_ on: Bool) -> String {
+        on ? "On: other windows are faded · ⌃⌥D" : "Fade every window except the active one · ⌃⌥D"
+    }
+
+    private static func cleanSpaceSubtitle(_ on: Bool) -> String {
+        on ? "On: switch off to bring everything back · ⌃⌥P" : "One window on a plain screen, for sharing · ⌃⌥P"
     }
 
     @objc private func quit() { NSApp.terminate(nil) }

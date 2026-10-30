@@ -48,7 +48,9 @@ public struct Tile: Equatable, Sendable {
     }
 
     /// A window waiting behind the showing one, least recently used first.
-    var waiting: WindowID? { recent.first { $0 != showing } }
+    func waiting(excluding excluded: Set<WindowID>) -> WindowID? {
+        recent.first { $0 != showing && !excluded.contains($0) }
+    }
 
     mutating func absorb(_ other: Tile) {
         for id in other.windows where !windows.contains(id) {
@@ -68,6 +70,8 @@ public struct Tile: Equatable, Sendable {
 /// The ordered tiles of one screen on one Space. Tile 0 is primary.
 public struct ScreenTiles: Equatable, Sendable {
     public private(set) var tiles: [Tile] = []
+    /// Windows the user stacked on purpose; they stay stacked even when there is room.
+    public private(set) var pinned: Set<WindowID> = []
 
     public init() {}
 
@@ -94,6 +98,7 @@ public struct ScreenTiles: Equatable, Sendable {
 
     public mutating func remove(_ id: WindowID, capacity: Int) {
         guard let i = tileIndex(of: id) else { return }
+        pinned.remove(id)
         if !tiles[i].remove(id) { tiles.remove(at: i) }
         normalize(capacity: capacity)
     }
@@ -111,7 +116,7 @@ public struct ScreenTiles: Equatable, Sendable {
     }
 
     /// Lowering the count merges the last tiles into the previous one; raising it
-    /// gives waiting stacked windows their own tile.
+    /// gives waiting stacked windows their own tile, except those stacked on purpose.
     public mutating func normalize(capacity: Int) {
         let capacity = max(capacity, 1)
         while tiles.count > capacity {
@@ -119,8 +124,8 @@ public struct ScreenTiles: Equatable, Sendable {
             tiles[tiles.count - 1].absorb(last)
         }
         while tiles.count < capacity,
-              let source = tiles.lastIndex(where: \.isStacked),
-              let id = tiles[source].waiting {
+              let source = tiles.lastIndex(where: { $0.waiting(excluding: pinned) != nil }),
+              let id = tiles[source].waiting(excluding: pinned) {
             _ = tiles[source].remove(id)
             tiles.append(Tile(id))
         }
@@ -141,6 +146,19 @@ public struct ScreenTiles: Equatable, Sendable {
         guard let i = tileIndex(of: id), tiles[i].showing != id else { return false }
         tiles[i].show(id)
         return true
+    }
+
+    /// Moves a window onto another tile's stack, on top. Its old tile closes up if it empties.
+    public mutating func move(_ id: WindowID, toTile target: Int, capacity: Int) {
+        guard let from = tileIndex(of: id), tiles.indices.contains(target), from != target else { return }
+        // Indices shift if the old tile empties; remember the target by its showing window.
+        let anchor = tiles[target].showing
+        if !tiles[from].remove(id) { tiles.remove(at: from) }
+        guard let destination = tileIndex(of: anchor) else { return }
+        tiles[destination].push(id)
+        // The whole stack was made on purpose, so none of it splits off when there's room.
+        pinned.formUnion(tiles[destination].windows)
+        normalize(capacity: capacity)
     }
 
     /// Shows the next (or previous) window of a stacked tile and returns it.

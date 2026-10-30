@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import PaneCore
 
 /// User preferences, persisted in UserDefaults. Layout and window count are per display.
@@ -35,6 +35,84 @@ final class Settings {
     var excludedBundleIDs: Set<String> {
         get { Set(defaults.stringArray(forKey: "excludedBundleIDs") ?? Array(Self.defaultExcluded)) }
         set { defaults.set(Array(newValue).sorted(), forKey: "excludedBundleIDs") }
+    }
+
+    enum HighlightStyle: String, CaseIterable {
+        case none, activeBorder, allBorders, glow
+        var title: String {
+            switch self {
+            case .none: return "None"
+            case .activeBorder: return "Active Border"
+            case .allBorders: return "All Borders"
+            case .glow: return "Glow"
+            }
+        }
+    }
+
+    enum HighlightColor: String, CaseIterable {
+        case accent, blue, purple, pink, orange, green, graphite
+        var title: String { rawValue == "accent" ? "Accent Color" : rawValue.capitalized }
+        var color: NSColor {
+            switch self {
+            case .accent: return .controlAccentColor
+            case .blue: return .systemBlue
+            case .purple: return .systemPurple
+            case .pink: return .systemPink
+            case .orange: return .systemOrange
+            case .green: return .systemGreen
+            case .graphite: return .systemGray
+            }
+        }
+    }
+
+    enum CleanSpaceBackground: String, CaseIterable {
+        case graphite, mist, stone
+        var title: String { rawValue.capitalized }
+        var color: NSColor {
+            switch self {
+            case .graphite: return NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.18, alpha: 1)
+            case .mist: return NSColor(calibratedRed: 0.86, green: 0.87, blue: 0.89, alpha: 1)
+            case .stone: return NSColor(calibratedRed: 0.62, green: 0.58, blue: 0.53, alpha: 1)
+            }
+        }
+    }
+
+    var highlightStyle: HighlightStyle {
+        get { defaults.string(forKey: "highlightStyle").flatMap(HighlightStyle.init(rawValue:)) ?? .activeBorder }
+        set { defaults.set(newValue.rawValue, forKey: "highlightStyle") }
+    }
+
+    var highlightColor: HighlightColor {
+        get { defaults.string(forKey: "highlightColor").flatMap(HighlightColor.init(rawValue:)) ?? .accent }
+        set { defaults.set(newValue.rawValue, forKey: "highlightColor") }
+    }
+
+    /// The grip above the active window, with stack chips or quick actions on hover.
+    var showsQuickActions: Bool {
+        get { defaults.object(forKey: "showsQuickActions") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "showsQuickActions") }
+    }
+
+    /// Activate a tiled window when the pointer rests on it.
+    var hoverFocus: Bool {
+        get { defaults.object(forKey: "hoverFocus") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "hoverFocus") }
+    }
+
+    /// How dark No peek makes other windows, 0.1...0.9.
+    var noPeekDim: Double {
+        get { defaults.object(forKey: "noPeekDim") as? Double ?? 0.5 }
+        set { defaults.set(min(max(newValue, 0.1), 0.9), forKey: "noPeekDim") }
+    }
+
+    var noPeekBlur: Bool {
+        get { defaults.object(forKey: "noPeekBlur") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "noPeekBlur") }
+    }
+
+    var cleanSpaceBackground: CleanSpaceBackground {
+        get { defaults.string(forKey: "cleanSpaceBackground").flatMap(CleanSpaceBackground.init(rawValue:)) ?? .graphite }
+        set { defaults.set(newValue.rawValue, forKey: "cleanSpaceBackground") }
     }
 
     /// The smallest size each app has been seen to accept, learned from frames it refused.

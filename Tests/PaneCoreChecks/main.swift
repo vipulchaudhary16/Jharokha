@@ -32,6 +32,10 @@ run("neighbors", layout.neighbors)
 run("minimumTakesRoomFromNeighbours", layout.minimumTakesRoomFromNeighbours)
 run("minimumsThatCannotFitReturnNil", layout.minimumsThatCannotFitReturnNil)
 run("minimumWidthInGridColumn", layout.minimumWidthInGridColumn)
+run("draggingAnEdgeMovesTheNeighbour", layout.draggingAnEdgeMovesTheNeighbour)
+run("resizingOnlyAffectsTheSplitOnThatEdge", layout.resizingOnlyAffectsTheSplitOnThatEdge)
+run("dragFromTheLeftEdgeGrowsLeftward", layout.dragFromTheLeftEdgeGrowsLeftward)
+run("outerEdgesNeverMoveAndNeighboursKeepAFloor", layout.outerEdgesNeverMoveAndNeighboursKeepAFloor)
 
 let tiles = ScreenTilesTests()
 run("newWindowsGetTilesUntilFullThenStack", tiles.newWindowsGetTilesUntilFullThenStack)
@@ -41,6 +45,7 @@ run("waitingWindowGetsOwnTileWhenRoomAppears", tiles.waitingWindowGetsOwnTileWhe
 run("loweringCountMergesIntoPreviousTile", tiles.loweringCountMergesIntoPreviousTile)
 run("swapMovesOnlyShowingWindows", tiles.swapMovesOnlyShowingWindows)
 run("cycleWrapsAround", tiles.cycleWrapsAround)
+run("movingAWindowOntoAnotherTileStacksIt", tiles.movingAWindowOntoAnotherTileStacksIt)
 
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

@@ -71,4 +71,16 @@ struct ScreenTilesTests {
         expect(s.cycle(tile: 0, by: -1) == 3)
         expect(s.cycle(tile: 5, by: 1) == nil)
     }
+
+    func movingAWindowOntoAnotherTileStacksIt() {
+        var s = ScreenTiles()
+        s.reconcile(present: [1, 2, 3], capacity: 3, activeTile: nil)
+        s.move(3, toTile: 0, capacity: 3)
+        expect(s.tiles.count == 2)
+        expect(s.tiles[0].windows == [1, 3])
+        expect(s.tiles[0].showing == 3)
+        s.move(1, toTile: 1, capacity: 2)
+        expect(s.tiles[1].windows == [2, 1])
+        expect(s.tiles[0].showing == 3)
+    }
 }
