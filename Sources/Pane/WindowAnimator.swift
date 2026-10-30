@@ -31,6 +31,11 @@ final class WindowAnimator: NSObject {
 
     func target(of id: CGWindowID) -> CGRect? { animations[id]?.to }
 
+    /// Where an animating window is right now (AX coordinates).
+    func currentFrame(of id: CGWindowID) -> CGRect? {
+        animations[id].map { frame(of: $0, at: CACurrentMediaTime()) }
+    }
+
     func animate(_ window: AXWindow, to target: CGRect, completion: @escaping () -> Void) {
         let now = CACurrentMediaTime()
         let from = animations[window.id].map { frame(of: $0, at: now) } ?? window.frame ?? target

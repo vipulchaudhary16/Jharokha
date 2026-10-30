@@ -74,9 +74,29 @@ final class WindowChrome {
         })
     }
 
+    /// A stack pill or grip centred on a tile's top edge, in the gap above it.
+    private func stripFrame(over tile: CGRect, size: NSSize) -> NSRect {
+        let rect = Self.nsRect(tile)
+        return NSRect(x: rect.midX - size.width / 2, y: rect.maxY + max(settings.gap / 2, 3) - size.height / 2,
+                      width: size.width, height: size.height)
+    }
+
+    /// Where a tile's window is now: mid-glide, or already in its tile.
+    private func currentRect(_ tile: TilingManager.ChromeTile) -> CGRect {
+        tiler.animator.currentFrame(of: tile.showing) ?? tile.rect
+    }
+
     private func follow(_ frames: [CGWindowID: CGRect]) {
         veil.follow(frames)
         guard !hidden else { return }
+        if let grip, let tile = grip.view.tile, let frame = frames[tile.showing] {
+            grip.panel.setFrame(stripFrame(over: frame, size: grip.view.intrinsicSize), display: false)
+        }
+        for entry in dots.values {
+            if let frame = frames[entry.view.showing] {
+                entry.panel.setFrame(stripFrame(over: frame, size: entry.view.intrinsicSize), display: false)
+            }
+        }
         for (id, frame) in frames {
             guard let panel = borders[id], let view = panel.contentView as? BorderView else { continue }
             panel.setFrame(Self.nsRect(frame).insetBy(dx: -view.inset, dy: -view.inset), display: true)
@@ -90,14 +110,9 @@ final class WindowChrome {
         let tiles = tiler.chromeTiles()
         updateBorders(tiles)
         // The grip and dots wait for windows to settle, then fade in where they landed.
-        if tiler.animator.isRunning {
-            grip.map { fadeOut($0.panel) }
-            hideBar()
-            dots.values.forEach { fadeOut($0.panel) }
-        } else {
-            updateGrip(tiles)
-            updateDots(tiles)
-        }
+        // The grip and stack pills stay up while windows glide; `follow` carries them along.
+        updateGrip(tiles)
+        updateDots(tiles)
         updateHoverMonitor()
     }
 
@@ -165,11 +180,7 @@ final class WindowChrome {
             : nil
         entry.view.showingIndex = active.windows.firstIndex(of: active.showing) ?? 0
         entry.view.tile = active
-        let size = entry.view.intrinsicSize
-        let rect = Self.nsRect(active.rect)
-        // Centered on the window's top edge, in the gap above it.
-        let frame = NSRect(x: rect.midX - size.width / 2, y: rect.maxY + max(settings.gap / 2, 3) - size.height / 2,
-                           width: size.width, height: size.height)
+        let frame = stripFrame(over: currentRect(active), size: entry.view.intrinsicSize)
         let wasHidden = !entry.panel.isVisible || entry.panel.alphaValue < 1
         if wasHidden { entry.panel.alphaValue = 0 }
         entry.panel.setFrame(frame, display: true)
@@ -264,13 +275,16 @@ final class WindowChrome {
 
     private func updateDots(_ tiles: [TilingManager.ChromeTile]) {
         let stacked = tiles.filter { $0.windows.count > 1 && !($0.isActive && settings.showsQuickActions) }
-        let ids = Set(stacked.map(\.showing))
+        // Keyed by the stack (its lowest window ID), so switching windows in it doesn't
+        // replace the pill and make it flicker.
+        func key(_ tile: TilingManager.ChromeTile) -> CGWindowID { tile.windows.min() ?? tile.showing }
+        let ids = Set(stacked.map(key))
         for (id, entry) in dots where !ids.contains(id) {
             fadeOut(entry.panel)
             dots[id] = nil
         }
         for tile in stacked {
-            let entry = dots[tile.showing] ?? {
+            let entry = dots[key(tile)] ?? {
                 let panel = Self.overlayPanel(clickThrough: false)
                 panel.level = .floating
                 let view = StackDotsView()
@@ -278,15 +292,12 @@ final class WindowChrome {
                 panel.contentView = view
                 return (panel, view)
             }()
-            dots[tile.showing] = entry
+            dots[key(tile)] = entry
             entry.view.icons = tile.windows.map { tiler.appIcon(of: $0) }
             entry.view.windows = tile.windows
             entry.view.showing = tile.showing
-            let size = entry.view.intrinsicSize
-            let rect = Self.nsRect(tile.rect)
             if !entry.panel.isVisible { entry.panel.alphaValue = 0 }
-            entry.panel.setFrame(NSRect(x: rect.midX - size.width / 2, y: rect.maxY + max(settings.gap / 2, 3) - size.height / 2,
-                                        width: size.width, height: size.height), display: true)
+            entry.panel.setFrame(stripFrame(over: currentRect(tile), size: entry.view.intrinsicSize), display: true)
             entry.panel.orderFrontRegardless()
             fadeIn(entry.panel)
         }

@@ -15,7 +15,9 @@ extension TilingManager {
     /// Every tile on screen now, with the active one marked. Empty while tiling is paused.
     func chromeTiles() -> [ChromeTile] {
         guard canTile else { return [] }
-        let focused = AX.focusedWindow()?.id
+        // Resolved like keyboard commands: an app focusing a helper window Pane doesn't tile
+        // (Electron apps do) still has an active tile, so its grip doesn't vanish.
+        let focused = context()?.window ?? AX.focusedWindow()?.id
         var result: [ChromeTile] = []
         for display in Display.current() {
             guard let state = states[display.key] else { continue }
