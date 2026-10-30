@@ -38,7 +38,8 @@ jobs:
         run: .github/scripts/release-notes.sh "$VERSION" > release-notes.md && cat release-notes.md
 
       - name: Check the layout engine
-        run: swift run -c release JharokhaCoreChecks
+        # Debug: the checks use @testable import, which release builds don't allow.
+        run: swift run JharokhaCoreChecks
 
       - name: Build universal app
         env:
