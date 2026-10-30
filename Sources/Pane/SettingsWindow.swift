@@ -1,10 +1,16 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 /// Settings: General options and the keyboard shortcut editor.
 final class SettingsWindowController {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
+    /// Layout settings changed (main size, spacing, all screens): re-lay out the windows.
+    var onLayoutSettingsChanged: (() -> Void)?
+    /// Smart placement was switched on: re-arrange now.
+    var onRearrange: (() -> Void)?
+    var onForgetSizes: (() -> Void)?
     /// Re-registers shortcuts after an edit; set by the app delegate.
     var onShortcutsChanged: (() -> Void)?
     var onSettingsChanged: (() -> Void)?
@@ -49,6 +55,11 @@ struct SettingsView: View {
 private struct GeneralSettings: View {
     let onChange: () -> Void
     private let settings = Settings.shared
+    private var controller: SettingsWindowController { .shared }
+    @State private var mainRatio = Settings.shared.mainRatio
+    @State private var gap = Int(Settings.shared.gap)
+    @State private var allScreens = Settings.shared.appliesToAllScreens
+    @State private var login = SMAppService.mainApp.status == .enabled
     @State private var highlight = Settings.shared.highlightStyle
     @State private var color = Settings.shared.highlightColor
     @State private var quickActions = Settings.shared.showsQuickActions
@@ -63,6 +74,25 @@ private struct GeneralSettings: View {
 
     var body: some View {
         Form {
+            Section("Layout") {
+                Picker("Main window size", selection: $mainRatio) {
+                    Text("Half").tag(0.5)
+                    Text("60%").tag(0.6)
+                    Text("Two-thirds").tag(2.0 / 3.0)
+                }
+                .onChange(of: mainRatio) { _, value in settings.mainRatio = value; controller.onLayoutSettingsChanged?() }
+                Picker("Spacing", selection: $gap) {
+                    ForEach([0, 4, 8, 12, 16], id: \.self) { Text($0 == 0 ? "None" : "\($0) pt").tag($0) }
+                }
+                .onChange(of: gap) { _, value in settings.gap = Double(value); controller.onLayoutSettingsChanged?() }
+                Toggle("Apply layout and window count to every screen", isOn: $allScreens)
+                    .onChange(of: allScreens) { _, value in settings.appliesToAllScreens = value; controller.onLayoutSettingsChanged?() }
+                Toggle("Smart placement: windows that need more room get the bigger tiles", isOn: $smart)
+                    .onChange(of: smart) { _, value in settings.arrangesBySize = value; if value { controller.onRearrange?() } }
+                LabeledContent("Learned window sizes") {
+                    Button("Forget") { controller.onForgetSizes?() }
+                }
+            }
             Section("Highlight") {
                 Picker("Style", selection: $highlight) {
                     ForEach(Settings.HighlightStyle.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -74,8 +104,6 @@ private struct GeneralSettings: View {
                 .onChange(of: color) { _, value in settings.highlightColor = value; onChange() }
             }
             Section("Windows") {
-                Toggle("Smart placement: windows that need more room get the bigger tiles", isOn: $smart)
-                    .onChange(of: smart) { _, value in settings.arrangesBySize = value; onChange() }
                 Toggle("Animate windows into place", isOn: $animate)
                     .onChange(of: animate) { _, value in settings.animatesWindows = value; onChange() }
                 Toggle("Blur windows while they resize", isOn: $veil)
@@ -84,6 +112,17 @@ private struct GeneralSettings: View {
                     .onChange(of: quickActions) { _, value in settings.showsQuickActions = value; onChange() }
                 Toggle("Activate windows on hover", isOn: $hoverFocus)
                     .onChange(of: hoverFocus) { _, value in settings.hoverFocus = value; onChange() }
+            }
+            Section("Startup") {
+                Toggle("Open Pane at login", isOn: $login)
+                    .onChange(of: login) { _, value in
+                        do {
+                            if value { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+                        } catch {
+                            NSAlert(error: error).runModal()
+                        }
+                        login = SMAppService.mainApp.status == .enabled
+                    }
             }
             Section("No peek") {
                 LabeledContent("Dim other windows") {

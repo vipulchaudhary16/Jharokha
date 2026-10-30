@@ -78,81 +78,26 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                             icon: "arrow.triangle.2.circlepath", subtitle: "Put every window back in its place"))
         menu.addItem(.separator())
 
-        let ratio = CGFloat(settings.mainRatio)
         if let display {
-            let current = settings.layout(for: display)
             let shared = settings.appliesToAllScreens
-            let capacity = settings.capacity(for: display)
+            let picker = LayoutPickerRow(selected: settings.layout(for: display), shape: display.shape,
+                                         ratio: CGFloat(settings.mainRatio))
+            picker.onPick = { [weak self] kind in self?.tiler.setLayout(kind, on: self?.display) }
+            let pickerItem = NSMenuItem()
+            pickerItem.view = picker
             menu.addItem(header(shared ? "Layout" : "Layout on This Screen"))
-            for kind in LayoutKind.allCases {
-                let unavailable = display.shape == .vertical && kind == .columns
-                let entry = toggle(kind.title, on: current == kind, #selector(chooseLayout(_:)))
-                entry.image = MenuIcons.layout(kind, count: MenuIcons.characteristicCount(of: kind, shape: display.shape),
-                                               ratio: ratio, shape: display.shape)
-                entry.subtitle = unavailable ? "Not available on a vertical monitor" : Self.summary(of: kind)
-                entry.representedObject = kind.rawValue
-                entry.isEnabled = !unavailable
-                menu.addItem(entry)
-            }
-            menu.addItem(.separator())
+            menu.addItem(pickerItem)
 
-            let counts = NSMenu()
             // A shared count is offered up to what the roomiest screen holds.
             let max = shared ? Display.current().map(settings.maxCount).max() ?? settings.maxCount(for: display)
                              : settings.maxCount(for: display)
-            for n in 1...5 {
-                let entry = toggle(n == 1 ? "1 Window" : "\(n) Windows", on: n == capacity, #selector(chooseCount(_:)))
-                entry.image = MenuIcons.layout(current, count: min(n, LayoutEngine.maxCount(kind: current, shape: display.shape, size: display.rect.size)),
-                                               ratio: ratio, shape: display.shape)
-                entry.tag = n
-                entry.keyEquivalent = "\(n)"
-                entry.keyEquivalentModifierMask = [.control, .option, .command]
-                entry.isEnabled = n <= max
-                if n > max { entry.subtitle = "\(current.title) holds up to \(max) here" }
-                counts.addItem(entry)
-            }
-            let countItem = submenu(shared ? "Windows per Screen: \(capacity)" : "Windows on This Screen: \(capacity)", counts)
-            countItem.image = MenuIcons.layout(current, count: capacity, ratio: ratio, shape: display.shape)
-            countItem.subtitle = "More windows than this stack in the active tile"
+            let counts = CountPickerRow(selected: settings.capacity(for: display), maximum: max)
+            counts.onPick = { [weak self] n in self?.tiler.setCapacity(n, on: self?.display) }
+            let countItem = NSMenuItem()
+            countItem.view = counts
             menu.addItem(countItem)
-
-            let sizes = NSMenu()
-            for (title, value) in [("Half", 0.5), ("60%", 0.6), ("Two-thirds", 2.0 / 3.0)] {
-                let entry = toggle(title, on: abs(settings.mainRatio - value) < 0.01, #selector(chooseMainRatio(_:)))
-                entry.image = MenuIcons.layout(current == .rows ? .rows : .columns, count: 2, ratio: value, shape: display.shape)
-                entry.representedObject = value
-                sizes.addItem(entry)
-            }
-            let sizeItem = submenu("Main Window Size", sizes)
-            sizeItem.image = MenuIcons.layout(current == .rows ? .rows : .columns, count: 2, ratio: ratio, shape: display.shape)
-            sizeItem.subtitle = "How much room the first window gets"
-            menu.addItem(sizeItem)
+            menu.addItem(.separator())
         }
-
-        let gaps = NSMenu()
-        for gap in [0, 4, 8, 12, 16] {
-            let entry = toggle(gap == 0 ? "None" : "\(gap) pt", on: Int(settings.gap) == gap, #selector(chooseGap(_:)))
-            entry.image = MenuIcons.spacing(CGFloat(gap))
-            entry.tag = gap
-            gaps.addItem(entry)
-        }
-        let gapItem = submenu("Spacing: \(Int(settings.gap)) pt", gaps)
-        gapItem.image = MenuIcons.spacing(CGFloat(settings.gap))
-        gapItem.subtitle = "Gap between windows and screen edges"
-        menu.addItem(gapItem)
-        menu.addItem(switchItem("Smart Placement", subtitle: "Windows that need more room get the bigger tiles",
-                                icon: MenuIcons.symbol("rectangle.3.group"), isOn: settings.arrangesBySize) { [weak self] on in
-            self?.settings.arrangesBySize = on
-            if on { self?.tiler.retile() }
-            return nil
-        }.item)
-        menu.addItem(switchItem("Apply Changes to All Screens", subtitle: Self.allScreensSubtitle(settings.appliesToAllScreens),
-                                icon: MenuIcons.symbol("display.2"), isOn: settings.appliesToAllScreens) { [weak self] on in
-            self?.settings.appliesToAllScreens = on
-            self?.tiler.relayout()
-            return Self.allScreensSubtitle(on)
-        }.item)
-        menu.addItem(.separator())
 
         if let app = frontApp, let bundleID = app.bundleIdentifier, app.processIdentifier != getpid() {
             let (item, row) = switchItem("", subtitle: "", icon: nil, isOn: false) { [weak self] on in
@@ -211,68 +156,19 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }.item)
         menu.addItem(.separator())
 
-        let highlights = NSMenu()
-        for style in Settings.HighlightStyle.allCases {
-            let entry = toggle(style.title, on: settings.highlightStyle == style, #selector(chooseHighlight(_:)))
-            entry.representedObject = style.rawValue
-            highlights.addItem(entry)
-        }
-        highlights.addItem(.separator())
-        for color in Settings.HighlightColor.allCases {
-            let entry = toggle(color.title, on: settings.highlightColor == color, #selector(chooseHighlightColor(_:)))
-            entry.image = Self.swatch(color.color)
-            entry.representedObject = color.rawValue
-            highlights.addItem(entry)
-        }
-        let highlightItem = submenu("Highlight: \(settings.highlightStyle.title)", highlights)
-        highlightItem.image = MenuIcons.symbol("square.dashed")
-        highlightItem.subtitle = "Border or glow around tiled windows"
-        menu.addItem(highlightItem)
-        menu.addItem(switchItem("Quick Actions Above Windows", subtitle: "A grip on the active window; hover it for actions",
-                                icon: MenuIcons.symbol("ellipsis.rectangle"), isOn: settings.showsQuickActions) { [weak self] on in
-            self?.settings.showsQuickActions = on
-            self?.chrome.update()
-            return nil
-        }.item)
-        menu.addItem(switchItem("Hover Focus", subtitle: "Activate a window when the pointer rests on it",
-                                icon: MenuIcons.symbol("cursorarrow.motionlines"), isOn: settings.hoverFocus) { [weak self] on in
-            self?.settings.hoverFocus = on
-            self?.chrome.update()
-            return nil
-        }.item)
-        menu.addItem(.separator())
-
         if let display, tiler.hasCustomSizes(on: display) {
             menu.addItem(action("Reset Window Sizes", #selector(resetSizes), key: "0", modifiers: [.control, .option],
                                 icon: "arrow.up.left.and.down.right.magnifyingglass", subtitle: "Back to equal shares and your main size"))
+            menu.addItem(.separator())
         }
-        menu.addItem(action("Forget Learned Window Sizes", #selector(forgetSizes),
-                            icon: "arrow.counterclockwise", subtitle: "Re-learn how small each app can get"))
-        menu.addItem(.separator())
 
-        let (loginItem, loginRow) = switchItem("Open at Login", subtitle: nil, icon: MenuIcons.symbol("power"),
-                                               isOn: SMAppService.mainApp.status == .enabled) { _ in nil }
-        loginRow.onChange = { [weak loginRow] on in
-            do {
-                if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-            } catch {
-                NSAlert(error: error).runModal()
-            }
-            loginRow?.isOn = SMAppService.mainApp.status == .enabled
-            return nil
-        }
-        menu.addItem(loginItem)
-        menu.addItem(action("Keyboard Shortcuts…", #selector(showShortcuts), icon: "keyboard"))
-        menu.addItem(action("Settings…", #selector(showSettings), key: ",", modifiers: [.command], icon: "gearshape"))
+        menu.addItem(action("Settings…", #selector(showSettings), key: ",", modifiers: [.command], icon: "gearshape",
+                            subtitle: "Sizes, spacing, highlight, shortcuts and more"))
         menu.addItem(action("Quit Pane", #selector(quit), key: "q", modifiers: [.command], icon: "xmark.circle"))
     }
 
     private static func tilingSubtitle(_ on: Bool) -> String {
         on ? "Place windows as they open" : "Off: windows stay where you put them"
-    }
-
-    private static func allScreensSubtitle(_ on: Bool) -> String {
-        on ? "Layout and count are shared by every screen" : "Each screen keeps its own layout and count"
     }
 
     private static func appSubtitle(_ on: Bool) -> String {
@@ -282,15 +178,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private static func focusSubtitle(_ on: Bool, app: String?) -> String {
         if on { return "On: switch off to put every window back\(ShortcutStore.shared.hint(.focusMode))" }
         return "Fill the screen with \(app ?? "the active window")\(ShortcutStore.shared.hint(.focusMode))"
-    }
-
-    private static func summary(of kind: LayoutKind) -> String {
-        switch kind {
-        case .grid: return "Each new window takes half the newest space"
-        case .columns: return "Side by side, full height"
-        case .rows: return "Stacked top to bottom, full width"
-        case .side: return "One large window, the rest in a column"
-        }
     }
 
     private var statusText: String {
@@ -309,24 +196,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func grantAccess() {
         AX.requestTrust()
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-    }
-
-    @objc private func chooseLayout(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let kind = LayoutKind(rawValue: raw) else { return }
-        tiler.setLayout(kind, on: display)
-    }
-
-    @objc private func chooseCount(_ sender: NSMenuItem) { tiler.setCapacity(sender.tag, on: display) }
-
-    @objc private func chooseMainRatio(_ sender: NSMenuItem) {
-        guard let ratio = sender.representedObject as? Double else { return }
-        settings.mainRatio = ratio
-        tiler.relayout()
-    }
-
-    @objc private func chooseGap(_ sender: NSMenuItem) {
-        settings.gap = Double(sender.tag)
-        tiler.relayout()
     }
 
     /// Closing the menu after picking a tile makes that window active. Actions run after
@@ -361,31 +230,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         row.update(title: "Include \(name) in Tiling", subtitle: Self.appSubtitle(tiled), icon: small, isOn: tiled)
     }
     @objc private func retile() { tiler.retile() }
-    @objc private func forgetSizes() { tiler.forgetLearnedSizes() }
-
-    @objc private func showShortcuts() { SettingsWindowController.shared.show(tab: .keyboard) }
     @objc private func showSettings() { SettingsWindowController.shared.show(tab: .general) }
     @objc private func resetSizes() { tiler.resetSizes(on: display) }
-
-    @objc private func chooseHighlight(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let style = Settings.HighlightStyle(rawValue: raw) else { return }
-        settings.highlightStyle = style
-        chrome.update()
-    }
-
-    @objc private func chooseHighlightColor(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let color = Settings.HighlightColor(rawValue: raw) else { return }
-        settings.highlightColor = color
-        chrome.update()
-    }
-
-    private static func swatch(_ color: NSColor) -> NSImage {
-        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
-            color.setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
-            return true
-        }
-    }
 
     private static func noPeekSubtitle(_ on: Bool) -> String {
         on ? "On: other windows are faded\(ShortcutStore.shared.hint(.noPeek))" : "Fade every window except the active one\(ShortcutStore.shared.hint(.noPeek))"
