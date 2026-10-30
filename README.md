@@ -46,3 +46,13 @@ This needs only the Command Line Tools, not Xcode. Builds are signed with the "P
 ## Credits
 
 Window-handling techniques (the size/position/size frame write, the enhanced-UI workaround, `_AXUIElementGetWindow`) follow [Rectangle](https://github.com/rxhanson/Rectangle) (MIT, © Ryan Hanson).
+
+## Releasing
+
+Add a `## [x.y.z]` section to `CHANGELOG.md`, then push a tag:
+
+```sh
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+GitHub Actions (`.github/workflows/release.yml`) builds a universal app and publishes a release with `Jharokha-x.y.z.dmg`, a zip and checksums, using the changelog section as notes. `UNIVERSAL=1 ./scripts/bundle.sh` makes the same DMG locally in `build/`.

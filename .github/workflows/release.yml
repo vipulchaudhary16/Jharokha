@@ -1,0 +1,76 @@
+# Builds a universal Jharokha.app and publishes a GitHub release when a version tag is pushed:
+#   git tag v1.0.0 && git push origin v1.0.0
+# Release notes come from that version's section in CHANGELOG.md (the run fails without one).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 1.0.1). Builds artifacts only; no release."
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The app is written against Swift 6.2.
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Pick version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Release notes from CHANGELOG.md
+        run: .github/scripts/release-notes.sh "$VERSION" > release-notes.md && cat release-notes.md
+
+      - name: Check the layout engine
+        run: swift run -c release JharokhaCoreChecks
+
+      - name: Build universal app
+        env:
+          UNIVERSAL: "1"
+        run: scripts/bundle.sh
+
+      - name: Name artifacts by version
+        working-directory: build
+        run: |
+          cp Jharokha.dmg "Jharokha-$VERSION.dmg"
+          mv Jharokha.zip "Jharokha-$VERSION.zip"
+          shasum -a 256 "Jharokha-$VERSION.dmg" "Jharokha-$VERSION.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jharokha-${{ env.VERSION }}
+          path: |
+            build/Jharokha-*.dmg
+            build/Jharokha-*.zip
+            build/SHA256SUMS.txt
+
+      # Jharokha.dmg (unversioned) gives the website a link that always points at the latest:
+      # https://github.com/vipulchaudhary16/Jharokha/releases/latest/download/Jharokha.dmg
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Jharokha ${{ env.VERSION }}
+          body_path: release-notes.md
+          files: |
+            build/Jharokha-*.dmg
+            build/Jharokha-*.zip
+            build/Jharokha.dmg
+            build/SHA256SUMS.txt
