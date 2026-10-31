@@ -56,3 +56,7 @@ git tag v1.0.0 && git push origin v1.0.0
 ```
 
 GitHub Actions (`.github/workflows/release.yml`) builds a universal app and publishes a release with `Jharokha-x.y.z.dmg`, a zip and checksums, using the changelog section as notes. `UNIVERSAL=1 ./scripts/bundle.sh` makes the same DMG locally in `build/`.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE). Jharokha is free; if it helps, you can [buy me a chai](https://jharokha.vipulchaudhary.in/#download).
