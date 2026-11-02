@@ -5,6 +5,21 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 Each release's notes on GitHub are taken from its section here, so add one before tagging.
 
+## [1.1.0] — 2026-11-02
+
+### Added
+- Floating windows get a grip with quick actions: **Tile** gives the window a place in the layout, even when its app is set to float, and **Tile App** tiles that app again.
+- **Float App** in a tiled window's quick actions: the app's windows open floating from then on (the same as ⌃⌥⇧F or turning off "Include ‹App› in Tiling").
+- ⌃⌥F also tiles a window of an app set to float.
+
+### Changed
+- A window that opens alone on a screen is left where macOS puts it, rather than filling the screen. Tiling starts when a second window opens. When windows close and one is left, it still takes the whole screen. To fill the screen with a lone window anyway, use Tile on its grip or Re-apply (⌃⌥R).
+
+### Fixed
+- File pickers (choosing a file to upload in a browser, say), save panels and other dialogs that apps show as ordinary windows no longer get tiled. They float.
+- Picking a window from a stack's chips closes the chip bar and its blur, instead of leaving them open over the window.
+- Coming back to a desktop no longer turns Focus Mode off or reshuffles its tiles. Its windows can be missing from the window list for a moment after the switch, and Jharokha used to drop them from the layout.
+
 ## [1.0.0] — 2026-10-31
 
 The first release of Jharokha (झरोखा): automatic window tiling for macOS 15 and later, named after the carved windows of Rajasthan's palaces.

@@ -67,8 +67,18 @@ struct AXWindow {
     var isTileable: Bool {
         guard element.value(kAXRoleAttribute) as String? == kAXWindowRole,
               element.value(kAXSubroleAttribute) as String? == kAXStandardWindowSubrole,
-              !isMinimized, !isFullScreen else { return false }
+              !isMinimized, !isFullScreen, !isDialog else { return false }
         return element.isSettable(kAXSizeAttribute) && element.isSettable(kAXPositionAttribute)
+    }
+
+    /// File pickers, save and print panels: temporary windows that many apps (browsers
+    /// uploading a file, for one) report as standard windows, so the subrole alone doesn't
+    /// catch them. A modal window is one; so is a window that can neither zoom nor go full screen.
+    var isDialog: Bool {
+        if element.value(kAXModalAttribute) as Bool? == true { return true }
+        if element.value(kAXFullScreenButtonAttribute) as AXUIElement? != nil { return false }
+        guard let zoom: AXUIElement = element.value(kAXZoomButtonAttribute) else { return true }
+        return zoom.value(kAXEnabledAttribute) as Bool? == false
     }
 
     /// Size, then position, then size again: macOS clamps sizes to the current display,

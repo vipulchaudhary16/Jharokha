@@ -126,7 +126,7 @@ enum ShortcutAction: String, CaseIterable {
         case .grow: return "Make the active window bigger"
         case .shrink: return "Make the active window smaller"
         case .resetSizes: return "Reset window sizes on this screen"
-        case .float: return "Float the active window, or tile it again"
+        case .float: return "Float the active window, or tile a floating one"
         case .alwaysFloat: return "Always float windows like the active one"
         case .pinApp: return "Pin the active app to every desktop"
         case .focusMode: return "Focus Mode"

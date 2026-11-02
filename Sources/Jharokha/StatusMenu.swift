@@ -203,7 +203,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private static func appSubtitle(_ on: Bool) -> String {
-        on ? "Its windows are part of the layout" : "Its windows are left where you put them"
+        on ? "Its windows are part of the layout" : "Its windows float; tile one from its grip"
     }
 
     private static func focusSubtitle(_ on: Bool, app: String?) -> String {

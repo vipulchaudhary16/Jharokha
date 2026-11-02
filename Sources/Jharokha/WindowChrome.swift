@@ -169,7 +169,8 @@ final class WindowChrome {
     // MARK: - Grip and chip bar
 
     private func updateGrip(_ tiles: [TilingManager.ChromeTile]) {
-        guard settings.showsQuickActions, let active = tiles.first(where: \.isActive) else {
+        // A floating window that has focus gets the grip too, so it can be tiled from there.
+        guard settings.showsQuickActions, let active = tiler.focusedFloatingTile() ?? tiles.first(where: \.isActive) else {
             grip?.panel.orderOut(nil)
             hideBar()
             return
@@ -183,7 +184,9 @@ final class WindowChrome {
             : nil
         entry.view.showingIndex = active.windows.firstIndex(of: active.showing) ?? 0
         entry.view.tile = active
-        let frame = stripFrame(over: currentRect(active), size: entry.view.intrinsicSize)
+        var frame = stripFrame(over: currentRect(active), size: entry.view.intrinsicSize)
+        // A floating window can sit right under the menu bar; keep its grip on screen.
+        if active.isFloating { frame.origin.y = min(frame.origin.y, active.screen.visibleFrame.maxY - frame.height) }
         let wasHidden = !entry.panel.isVisible || entry.panel.alphaValue < 1
         if wasHidden { entry.panel.alphaValue = 0 }
         entry.panel.setFrame(frame, display: true)
@@ -216,6 +219,7 @@ final class WindowChrome {
         }
         view.onSelectSegment = { [weak self] index in
             guard let self, let tile = self.grip?.view.tile, tile.windows.indices.contains(index) else { return }
+            self.hideBar()
             self.tiler.activate(window: tile.windows[index])
         }
         panel.contentView = view
@@ -230,8 +234,11 @@ final class WindowChrome {
             entry.view.mode = .stack(tile.windows.map { id in
                 .init(id: id, icon: tiler.appIcon(of: id), title: Self.chipTitle(tiler, id), isShowing: id == tile.showing)
             })
+        } else if tile.isFloating {
+            entry.view.mode = .actions(tile.showing, tiler.appFloats(tile.showing)
+                ? [.tile, .tileApp, .minimize, .close] : [.tile, .minimize, .close])
         } else {
-            entry.view.mode = .actions(tile.showing)
+            entry.view.mode = .actions(tile.showing, [.primary, .focus, .float, .floatApp, .minimize, .close])
         }
         let size = entry.view.fittingSize
         let rect = Self.nsRect(tile.rect)
@@ -284,7 +291,12 @@ final class WindowChrome {
         view.onHover = { [weak self] inside in
             if inside { self?.hideBarWork?.cancel() } else { self?.scheduleHideBar() }
         }
-        view.onShow = { [weak self] id in self?.tiler.activate(window: id) }
+        // Picking a window is the end of the job: close the bar and its blur before the switch,
+        // or the refresh that follows activation would open them again.
+        view.onShow = { [weak self] id in
+            self?.hideBar()
+            self?.tiler.activate(window: id)
+        }
         view.onClose = { [weak self] id in self?.tiler.close(window: id) }
         view.onCycle = { [weak self] step in self?.tiler.cycleStack(step: step) }
         view.onDropChip = { [weak self] id, point in
@@ -298,6 +310,9 @@ final class WindowChrome {
             case .primary: self.tiler.activate(window: id); self.tiler.makePrimary()
             case .focus: self.tiler.toggleFocusMode(window: id)
             case .float: self.tiler.activate(window: id); self.tiler.toggleFloat()
+            case .floatApp: self.tiler.setAppFloats(true, of: id)
+            case .tile: self.tiler.tile(window: id)
+            case .tileApp: self.tiler.setAppFloats(false, of: id)
             case .minimize: self.tiler.minimize(window: id)
             case .close: self.tiler.close(window: id)
             }
@@ -568,9 +583,12 @@ final class ChipBarView: NSView {
     }
 
     enum QuickAction: CaseIterable {
-        case primary, focus, float, minimize, close
+        case primary, focus, float, floatApp, tile, tileApp, minimize, close
         var symbol: String {
             switch self {
+            case .floatApp: return "square.stack.3d.up"
+            case .tile: return "rectangle.split.2x2"
+            case .tileApp: return "square.grid.2x2"
             case .primary: return "star"
             case .focus: return "arrow.up.left.and.arrow.down.right"
             case .float: return "macwindow.on.rectangle"
@@ -583,6 +601,9 @@ final class ChipBarView: NSView {
             case .primary: return "Make primary"
             case .focus: return "Focus Mode"
             case .float: return "Float"
+            case .floatApp: return "Always float this app: its windows stay where you put them"
+            case .tile: return "Tile this window: give it a place in the layout"
+            case .tileApp: return "Tile this app's windows automatically again"
             case .minimize: return "Minimize"
             case .close: return "Close"
             }
@@ -593,6 +614,9 @@ final class ChipBarView: NSView {
             case .primary: return "Primary"
             case .focus: return "Focus"
             case .float: return "Float"
+            case .floatApp: return "Float App"
+            case .tile: return "Tile"
+            case .tileApp: return "Tile App"
             case .minimize: return "Minimize"
             case .close: return "Close"
             }
@@ -601,10 +625,10 @@ final class ChipBarView: NSView {
 
     enum Mode {
         case stack([Chip])
-        case actions(CGWindowID)
+        case actions(CGWindowID, [QuickAction])
     }
 
-    var mode: Mode = .actions(0) { didSet { rebuild() } }
+    var mode: Mode = .actions(0, []) { didSet { rebuild() } }
     var onHover: ((Bool) -> Void)?
     var onShow: ((CGWindowID) -> Void)?
     var onClose: ((CGWindowID) -> Void)?
@@ -667,8 +691,8 @@ final class ChipBarView: NSView {
                 stack.addArrangedSubview(view)
             }
             stack.addArrangedSubview(button(symbol: "chevron.right", help: "Next window") { [weak self] in self?.onCycle?(1) })
-        case .actions(let id):
-            for action in QuickAction.allCases {
+        case .actions(let id, let actions):
+            for action in actions {
                 stack.addArrangedSubview(button(symbol: action.symbol, help: action.help, label: action.label) { [weak self] in
                     self?.onAction?(action, id)
                 })

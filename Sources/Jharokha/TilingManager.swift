@@ -14,10 +14,25 @@ final class TilingManager {
 
     var states: [String: ScreenTiles] = [:]
     var windows: [CGWindowID: AXWindow] = [:]
+    /// Every window seen on any desktop, so one that is briefly missing when you come back to
+    /// its desktop can still be recognised (`windows` holds only the desktop last looked at).
+    private var seenWindows: [CGWindowID: AXWindow] = [:]
     /// Opening order; the earliest window on a screen is its primary.
     private var firstSeen: [CGWindowID: Int] = [:]
     private var seenCounter = 0
     var floating: Set<CGWindowID> = []
+    /// Windows of apps set to float that the user tiled anyway (the quick action or ⌃⌥F).
+    var tiledAnyway: Set<CGWindowID> = []
+    /// Screens (display and Space keys) whose only window opened there alone: Jharokha leaves
+    /// it where macOS put it until a second window arrives. A window left alone because the
+    /// others closed fills the screen instead.
+    var leftAlone: Set<String> = []
+    /// The windows each screen had at the last refresh, to tell a window opening alone from
+    /// one whose neighbours closed.
+    private var lastMembers: [String: Set<CGWindowID>] = [:]
+    /// The focused window when it floats, kept so the chrome's quick actions can reach it
+    /// (a window of an app set to float isn't in `windows`).
+    var untiledFocus: AXWindow?
     /// Focus mode: per display key, the window that fills the screen.
     var focusMode: [String: CGWindowID] = [:]
     /// The frame Jharokha last asked each window to take.
@@ -348,6 +363,7 @@ final class TilingManager {
         let (found, frontToBack) = enumerateWindows()
         let previous = windows
         windows = Dictionary(found.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for window in found { seenWindows[window.id] = window }
         let transient = keepBrieflyMissingWindows(previous: previous, displays: displays)
         // Windows discovered together (e.g. at launch) are ordered front to back, so the
         // frontmost window becomes primary.
@@ -369,6 +385,8 @@ final class TilingManager {
 
         for (key, ids) in transient { groups[key, default: []].append(contentsOf: ids) }
 
+        // Windows some screen already had: a lone window among them moved here, it didn't open.
+        let known = Set(lastMembers.values.joined())
         for display in displays {
             var state = states[display.key] ?? ScreenTiles()
             let present = (groups[display.key] ?? []).sorted { firstSeen[$0, default: 0] < firstSeen[$1, default: 0] }
@@ -382,13 +400,20 @@ final class TilingManager {
             // ⌘-Tab, the Dock or a click can bring a stacked window forward; it becomes the showing one.
             if let focused { state.show(focused) }
             let members = Set(state.allWindows)
+            updateLeftAlone(display.key, members: members, known: known)
             if members != arrangedMembers[display.key] {
                 arrangedMembers[display.key] = members
                 // A saved layout puts its apps back; smart placement handles the rest otherwise.
                 if !arrangeBySaved(display, &state) { arrangeBySize(display, &state) }
             }
             states[display.key] = state
-            if let zoomed = focusMode[display.key], !state.contains(zoomed) { focusMode[display.key] = nil }
+        }
+        // Focus mode ends when its window closes, is minimized or moves to another screen, not
+        // when it's out of sight for a moment (it comes back into the same tile).
+        for display in displays {
+            guard let zoomed = focusMode[display.key], states[display.key]?.contains(zoomed) != true else { continue }
+            let elsewhere = displays.contains { states[$0.key]?.contains(zoomed) == true }
+            if elsewhere || !(seenWindows[zoomed].map(isAlive) ?? false) { focusMode[display.key] = nil }
         }
         if let focused, windows[focused] != nil, !floating.contains(focused) { lastFocused = focused }
 
@@ -402,6 +427,28 @@ final class TilingManager {
         onStateChange?()
     }
 
+    /// A window that opens alone on a screen is left as it is; one left over when the others
+    /// close keeps filling the screen. Either way a second window starts tiling again.
+    private func updateLeftAlone(_ key: String, members: Set<CGWindowID>, known: Set<CGWindowID>) {
+        let before = lastMembers[key] ?? []
+        lastMembers[key] = members
+        guard members.count == 1 else {
+            leftAlone.remove(key)
+            return
+        }
+        if before.count >= 2 && before.isSuperset(of: members) {
+            leftAlone.remove(key)        // the others closed: take the whole screen
+        } else if before != members {
+            // Opened alone: left as it is. Moved here from another screen: it takes this one.
+            if known.isSuperset(of: members) { leftAlone.remove(key) } else { leftAlone.insert(key) }
+        }
+    }
+
+    /// Whether a window is the only one on its screen and left where it opened.
+    func isLeftAlone(_ id: CGWindowID) -> Bool {
+        leftAlone.contains { states[$0]?.allWindows == [id] }
+    }
+
     /// A tiled window can vanish from the on-screen list for a moment (a Space switching,
     /// Exposé, an app redrawing) while it still exists. Keep its tile for a grace period
     /// instead of reflowing everything; a window that is closed, minimized or hidden goes at once.
@@ -411,15 +458,13 @@ final class TilingManager {
         for display in displays {
             guard let state = states[display.key] else { continue }
             for id in state.allWindows where windows[id] == nil {
-                guard let window = previous[id],
-                      window.element.value(kAXRoleAttribute) as String? != nil,   // still exists
-                      !window.isMinimized,
-                      let app = NSRunningApplication(processIdentifier: window.pid), !app.isHidden, !app.isTerminated
-                else {
+                // Coming back to a desktop, its windows weren't in the last refresh, and the list
+                // can lag behind the switch: start their grace period now.
+                guard let window = previous[id] ?? seenWindows[id], isAlive(window) else {
                     missingSince[id] = nil
                     continue
                 }
-                let since = missingSince[id] ?? now
+                let since = (previous[id] != nil ? missingSince[id] : nil) ?? now
                 missingSince[id] = since
                 guard now.timeIntervalSince(since) < 1.5 else { continue }
                 windows[id] = window
@@ -435,6 +480,13 @@ final class TilingManager {
         return kept
     }
 
+    /// Not closed, minimized or hidden: a window that is only out of sight for a moment.
+    private func isAlive(_ window: AXWindow) -> Bool {
+        guard window.element.value(kAXRoleAttribute) as String? != nil, !window.isMinimized,
+              let app = NSRunningApplication(processIdentifier: window.pid) else { return false }
+        return !app.isHidden && !app.isTerminated
+    }
+
     /// Forgets per-window state for windows that no longer exist on any desktop. Windows on
     /// other desktops (or of hidden apps) keep theirs, so a floated window stays floating.
     private func pruneGoneWindows() {
@@ -443,8 +495,10 @@ final class TilingManager {
         let info = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         let alive = Set(info.compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
         floating.formIntersection(alive)
+        tiledAnyway.formIntersection(alive)
         firstSeen = firstSeen.filter { alive.contains($0.key) }
         bundleIDs = bundleIDs.filter { alive.contains($0.key) }
+        seenWindows = seenWindows.filter { alive.contains($0.key) }
         targets = targets.filter { alive.contains($0.key) }
         writes = writes.filter { alive.contains($0.key) }
         refusing.formIntersection(alive)
@@ -466,7 +520,8 @@ final class TilingManager {
 
     /// Tileable windows, plus each on-screen window's z-order (0 = frontmost).
     private func enumerateWindows() -> ([AXWindow], [CGWindowID: Int]) {
-        let excluded = settings.excludedBundleIDs.union(settings.pinnedBundleIDs)
+        let excluded = settings.excludedBundleIDs
+        let pinned = settings.pinnedBundleIDs
         // AX can report windows from other Spaces for some apps; keep only those on screen now.
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         var onScreen: [CGWindowID: Int] = [:]
@@ -477,8 +532,11 @@ final class TilingManager {
         var result: [AXWindow] = []
         for app in NSWorkspace.shared.runningApplications
         where app.activationPolicy == .regular && !app.isHidden && app.processIdentifier != getpid() {
-            if let bundleID = app.bundleIdentifier, excluded.contains(bundleID) { continue }
-            for window in AX.windows(of: app) where onScreen[window.id] != nil && window.isTileable {
+            if let bundleID = app.bundleIdentifier, pinned.contains(bundleID) { continue }
+            // An app set to float keeps only the windows the user tiled anyway.
+            let floatsApp = app.bundleIdentifier.map(excluded.contains) ?? false
+            for window in AX.windows(of: app) where onScreen[window.id] != nil && window.isTileable
+                && (!floatsApp || tiledAnyway.contains(window.id)) {
                 observer.watch(window)
                 bundleIDs[window.id] = app.bundleIdentifier
                 result.append(window)
@@ -524,6 +582,12 @@ final class TilingManager {
 
     private func applyOnce(_ display: Display, excluding excluded: Set<CGWindowID>, animated: Bool) {
         guard var state = states[display.key] else { return }
+        // A window that opened alone stays as it is (focus mode still zooms it).
+        if leftAlone.contains(display.key) && focusMode[display.key] == nil {
+            state.allWindows.forEach { targets[$0] = nil }
+            appliedRects[display.key] = nil
+            return
+        }
         let rects = solve(display, &state)
         states[display.key] = state
         appliedRects[display.key] = rects
@@ -871,14 +935,12 @@ final class TilingManager {
     }
 
     func toggleFloat() {
-        guard let id = AX.focusedWindow()?.id else { return }
-        if floating.remove(id) != nil {
-            Toast.show("Tiled")
-            refresh()
-            return
-        }
+        guard let focused = AX.focusedWindow() else { return }
+        let id = focused.id
+        if tile(window: focused) { return }
         guard let c = context(), let window = windows[id] else { return }
-        floating.insert(id)
+        // A window of an app set to float goes back to floating like the app's others.
+        if tiledAnyway.remove(id) == nil { floating.insert(id) }
         states[c.display.key]?.remove(id, capacity: settings.capacity(for: c.display))
         let area = c.display.rect
         let size = CGSize(width: min(window.frame?.width ?? area.width, area.width * 0.7),
@@ -889,6 +951,35 @@ final class TilingManager {
         apply(c.displays)
         window.focus()
         Toast.show("Floating")
+    }
+
+    /// Whether a window floats because its app is set to float (and the user hasn't tiled it).
+    func floatsByApp(_ window: AXWindow) -> Bool {
+        guard !tiledAnyway.contains(window.id), let app = NSRunningApplication(processIdentifier: window.pid),
+              app.activationPolicy == .regular, let bundleID = app.bundleIdentifier else { return false }
+        return settings.excludedBundleIDs.contains(bundleID) && !settings.pinnedBundleIDs.contains(bundleID)
+    }
+
+    /// Gives a floating window a place in the layout: one floated by hand, or a window of an
+    /// app set to float (only this window; the app's others keep floating). False if it wasn't floating.
+    @discardableResult
+    func tile(window: AXWindow) -> Bool {
+        let id = window.id
+        if isLeftAlone(id) {
+            leftAlone = leftAlone.filter { states[$0]?.allWindows != [id] }
+            apply(Display.current())
+            window.focus()
+            Toast.show("Tiled")
+            return true
+        }
+        if floating.remove(id) == nil {
+            guard window.isTileable, floatsByApp(window) else { return false }
+            tiledAnyway.insert(id)
+        }
+        refresh()
+        window.focus()
+        Toast.show("Tiled")
+        return true
     }
 
     /// Fills the screen with the active window; pressed again — from any window on that
@@ -947,7 +1038,7 @@ final class TilingManager {
     /// Cached per app, so the same icon instance comes back and the drag overlay only
     /// redraws when what it shows actually changes.
     func appIcon(of id: CGWindowID) -> NSImage? {
-        guard let pid = windows[id]?.pid else { return nil }
+        guard let pid = anyWindow(id)?.pid else { return nil }
         if let icon = iconCache[pid] { return icon }
         let icon = NSRunningApplication(processIdentifier: pid)?.icon
         iconCache[pid] = icon
@@ -955,7 +1046,7 @@ final class TilingManager {
     }
 
     func appName(of id: CGWindowID) -> (name: String, bundleID: String?)? {
-        guard let window = windows[id], let app = NSRunningApplication(processIdentifier: window.pid) else { return nil }
+        guard let window = anyWindow(id), let app = NSRunningApplication(processIdentifier: window.pid) else { return nil }
         return (app.localizedName ?? app.bundleIdentifier ?? "App", app.bundleIdentifier)
     }
 
@@ -1009,6 +1100,7 @@ final class TilingManager {
         crowded.removeAll()
         // "Every window back in its place" includes leaving focus mode.
         focusMode.removeAll()
+        leftAlone.removeAll()
         writes.removeAll()
         limitedBy.removeAll()
         arrangedMembers.removeAll()   // Re-apply also re-arranges by size

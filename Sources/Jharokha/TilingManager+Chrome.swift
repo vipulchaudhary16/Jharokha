@@ -10,6 +10,51 @@ extension TilingManager {
         let windows: [CGWindowID]
         let showing: CGWindowID
         let isActive: Bool
+        /// The focused window floats; its quick actions offer to tile it.
+        var isFloating = false
+    }
+
+    /// The focused window as a chrome tile when it floats (by hand, or because its app is set to
+    /// float) but could be tiled. Dialogs and pinned apps never qualify.
+    func focusedFloatingTile() -> ChromeTile? {
+        untiledFocus = nil
+        guard canTile, let window = AX.focusedWindow(), window.pid != getpid(),
+              floating.contains(window.id) || floatsByApp(window) || isLeftAlone(window.id), window.isTileable,
+              let frame = window.frame,
+              let display = Display.current().containing(CGPoint(x: frame.midX, y: frame.midY)) else { return nil }
+        untiledFocus = window
+        return ChromeTile(screen: display.screen, rect: frame, windows: [window.id], showing: window.id,
+                          isActive: true, isFloating: true)
+    }
+
+    /// A window Jharokha tiles, or the focused floating one.
+    func anyWindow(_ id: CGWindowID) -> AXWindow? {
+        windows[id] ?? (untiledFocus?.id == id ? untiledFocus : nil)
+    }
+
+    /// Whether the app of a window is set to float.
+    func appFloats(_ id: CGWindowID) -> Bool {
+        guard let bundleID = appName(of: id)?.bundleID else { return false }
+        return settings.excludedBundleIDs.contains(bundleID)
+    }
+
+    /// Tiles the floating window `id` (quick action).
+    func tile(window id: CGWindowID) {
+        guard let window = anyWindow(id) else { return }
+        tile(window: window)
+    }
+
+    /// Sets a window's app to float or to tile; its windows follow the setting from now on.
+    func setAppFloats(_ floats: Bool, of id: CGWindowID) {
+        guard let bundleID = appName(of: id)?.bundleID else { return }
+        setAppFloats(floats, bundleID: bundleID)
+    }
+
+    func setAppFloats(_ floats: Bool, bundleID: String) {
+        setTiling(!floats, forBundleID: bundleID, announce: false)
+        let name = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.localizedName ?? bundleID
+        Toast.show(floats ? "\(name) floats now · its windows stay where you put them"
+                          : "\(name) is tiled again")
     }
 
     /// Every tile on screen now, with the active one marked. Empty while tiling is paused.
@@ -21,8 +66,10 @@ extension TilingManager {
         var result: [ChromeTile] = []
         for display in Display.current() {
             guard let state = states[display.key] else { continue }
-            let rects = rects(for: display)
             let zoomed = focusMode[display.key]
+            // A lone window left where it opened has no tile to outline; it gets a floating grip.
+            if leftAlone.contains(display.key) && zoomed == nil { continue }
+            let rects = rects(for: display)
             for (index, tile) in state.tiles.enumerated() where rects.indices.contains(index) {
                 // In focus mode only the zoomed window is visible, at full size.
                 if let zoomed, tile.showing != zoomed { continue }
@@ -39,11 +86,11 @@ extension TilingManager {
         return id
     }
 
-    func title(of id: CGWindowID) -> String { windows[id]?.title ?? "" }
+    func title(of id: CGWindowID) -> String { anyWindow(id)?.title ?? "" }
 
     /// Closes a window as its close button would; the app may ask to save first.
     func close(window id: CGWindowID) {
-        guard let element = windows[id]?.element, let button: AXUIElement = element.value(kAXCloseButtonAttribute) else { return }
+        guard let element = anyWindow(id)?.element, let button: AXUIElement = element.value(kAXCloseButtonAttribute) else { return }
         AXUIElementPerformAction(button, kAXPressAction as CFString)
     }
 
@@ -51,7 +98,7 @@ extension TilingManager {
     func raise(window id: CGWindowID) { windows[id]?.raise() }
 
     func minimize(window id: CGWindowID) {
-        windows[id]?.element.set(kAXMinimizedAttribute, kCFBooleanTrue)
+        anyWindow(id)?.element.set(kAXMinimizedAttribute, kCFBooleanTrue)
     }
 
     /// Moves a window onto the tile under a point (AX coordinates), adding it to that tile's stack.
@@ -76,9 +123,9 @@ extension TilingManager {
 
     /// ⌃⌥⇧F: never tile the active window's app again (it floats where you put it).
     func alwaysFloatActiveApp() {
-        guard let id = AX.focusedWindow()?.id, let app = appName(of: id), let bundleID = app.bundleID else { return }
-        setTiling(false, forBundleID: bundleID, announce: false)
-        Toast.show("\(app.name) isn't tiled now · its windows float where you put them")
+        guard let pid = AX.focusedWindow()?.pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return }
+        setAppFloats(true, bundleID: bundleID)
     }
 
     /// The tiled window under a point, if it is the frontmost window there.

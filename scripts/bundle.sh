@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Builds Jharokha and wraps it into build/Jharokha.app, plus build/Jharokha.dmg and .zip.
-# Env: VERSION=1.0.0 sets the app version; UNIVERSAL=1 builds for Apple silicon + Intel.
+# Env: VERSION=1.1.0 sets the app version; UNIVERSAL=1 builds for Apple silicon + Intel.
 # Signs with $SIGN_IDENTITY, else the local "Pane Local Signing" certificate when the
 # keychain has it, else ad-hoc. A stable identity keeps the Accessibility grant across
 # rebuilds; ad-hoc signing makes macOS ask again after every build.
@@ -8,7 +8,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-release}"
-VERSION="${VERSION:-1.0.0}"
+VERSION="${VERSION:-1.1.0}"
 
 if [[ "${UNIVERSAL:-0}" == "1" ]]; then
     # One build per architecture, joined with lipo: works with just the Command Line Tools.

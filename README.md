@@ -30,7 +30,7 @@ This needs only the Command Line Tools, not Xcode. Builds are signed with the "P
 | ⌘↓ / ⌘↑ | Scroll down / up through this tile's stack |
 | ⌃⌥⇥ / ⌃⌥⇧⇥ | Tab View: every window, screen by screen |
 | = / − / 0 | Grow / shrink the active window, reset sizes |
-| F / ⇧F | Float the active window / always float its app |
+| F / ⇧F | Float the active window, or tile a floating one / always float its app |
 | ⌘P | Pin the active app to every desktop (floats and follows you between screens) |
 | Z | Focus mode |
 | D | No peek: fade every other window |
@@ -41,7 +41,11 @@ This needs only the Command Line Tools, not Xcode. Builds are signed with the "P
 **Mouse:**
 - Drag a window onto another tile to swap the two, or onto another screen to move it there. Hold ⌥⌘ while dragging to add it to that tile's stack instead.
 - Drag the edge between two windows to resize both.
-- Rest the pointer on the grip above the active window to open its stack chips or quick actions.
+- Rest the pointer on the grip above the active window to open its stack chips or quick actions. A floating window has a grip too: its Tile action gives it a place in the layout.
+
+**Apps that float:** turn off "Include ‹App› in Tiling" in the menu, press ⌃⌥⇧F, or use Float App in the quick actions, and that app's windows (a video player, say) open floating. You can still tile any one of them with Tile. File pickers, save panels and other dialogs always float.
+
+**One window:** a window that opens alone on a screen stays where macOS puts it; tiling starts with the second. When others close, the last window left takes the whole screen.
 
 ## Credits
 
