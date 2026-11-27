@@ -76,12 +76,21 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             self?.updateIcon()
             return Self.tilingSubtitle(on)
         }.item)
+        // With more than one screen, each can be left out of tiling; remembered per monitor.
+        if let display, NSScreen.screens.count > 1 {
+            let name = display.screen.localizedName
+            menu.addItem(switchItem("Tile This Screen", subtitle: Self.screenSubtitle(name, on: settings.tiles(display)),
+                                    icon: MenuIcons.symbol("display"), isOn: settings.tiles(display)) { [weak self] on in
+                self?.tiler.setTiles(on, display: display)
+                return Self.screenSubtitle(name, on: on)
+            }.item)
+        }
         // Shortcut hints come from the user's own shortcuts, so a remapped one is shown right.
         menu.addItem(action("Re-apply Tiling", #selector(retile), icon: "arrow.triangle.2.circlepath",
                             subtitle: "Put every window back in its place\(ShortcutStore.shared.hint(.retile))"))
         menu.addItem(.separator())
 
-        if let display {
+        if let display, settings.tiles(display) {
             let shared = settings.appliesToAllScreens
             let picker = LayoutPickerRow(selected: settings.layout(for: display), shape: display.shape,
                                          ratio: CGFloat(settings.mainRatio))
@@ -162,6 +171,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             DispatchQueue.main.async { self.modes.toggleCleanSpace() }
             return Self.cleanSpaceSubtitle(!cleanOn)
         }.item)
+        menu.addItem(action("Black Out", #selector(blackOut), icon: "moon.fill",
+                            subtitle: BlackOutPassword.current == nil
+                                ? "Screens go black, apps keep running · ⎋ ⎋ ⎋ to return"
+                                : "Screens go black, apps keep running · type your password and ↩"))
         menu.addItem(.separator())
 
         if let display {
@@ -263,7 +276,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         pinItemRef?.title = Self.pinTitle(name, pinned: pinned)
         pinItemRef?.subtitle = Self.pinSubtitle(pinned)
     }
+    private static func screenSubtitle(_ name: String, on: Bool) -> String {
+        on ? "\(name) · windows tile as they open" : "\(name) · windows stay where you put them"
+    }
+
     @objc private func retile() { tiler.retile() }
+    /// After the menu has closed, so the menu bar isn't left drawn over the black.
+    @objc private func blackOut() { DispatchQueue.main.async { BlackOut.shared.start() } }
     @objc private func showSettings() { SettingsWindowController.shared.show(tab: .general) }
     @objc private func showShortcuts() { SettingsWindowController.shared.show(tab: .keyboard) }
     @objc private func resetSizes() { tiler.resetSizes(on: display) }

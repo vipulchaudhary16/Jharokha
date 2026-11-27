@@ -21,7 +21,8 @@ extension TilingManager {
         guard canTile, let window = AX.focusedWindow(), window.pid != getpid(),
               floating.contains(window.id) || floatsByApp(window) || isLeftAlone(window.id), window.isTileable,
               let frame = window.frame,
-              let display = Display.current().containing(CGPoint(x: frame.midX, y: frame.midY)) else { return nil }
+              let display = Display.current().containing(CGPoint(x: frame.midX, y: frame.midY)),
+              settings.tiles(display) else { return nil }
         untiledFocus = window
         return ChromeTile(screen: display.screen, rect: frame, windows: [window.id], showing: window.id,
                           isActive: true, isFloating: true)

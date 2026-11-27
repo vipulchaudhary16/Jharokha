@@ -14,10 +14,26 @@ final class ModeController {
         self.tiler = tiler
         cleanSpace.onAutomaticEnd = { [weak self] in self?.endCleanSpace(announce: false) }
         cleanSpace.onToggle = { [weak self] id in self?.toggleShown(id) }
+        // Swiping to or from a full-screen app: focus settles a moment after the desktop changes,
+        // and may stay with the same app, so no activation follows. Look again once it has.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
+                                                          object: nil, queue: .main) { [weak self] _ in
+            for delay in [0.15, 0.6] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self?.update() }
+            }
+        }
+    }
+
+    /// The screen showing the focused window, when that window is full screen.
+    private static func fullScreen(_ window: AXWindow?) -> NSScreen? {
+        guard let window, window.isFullScreen, let frame = window.frame else { return nil }
+        let rect = WindowChrome.nsRect(frame)
+        return NSScreen.screens.first { $0.frame.contains(CGPoint(x: rect.midX, y: rect.midY)) }
     }
 
     func toggleNoPeek() {
         noPeek.setOn(!noPeek.isOn, below: AX.focusedWindow()?.id)
+        if noPeek.isOn { update() }
         Toast.show(noPeek.isOn ? "No Peek\(ShortcutStore.shared.hint(.noPeek, "to stop"))" : "No Peek off")
         onChange?()
     }
@@ -64,7 +80,7 @@ final class ModeController {
     /// Called after every layout pass and focus change.
     func update() {
         let focused = AX.focusedWindow()
-        noPeek.update(below: focused?.id)
+        noPeek.update(below: focused?.id, fullScreenOn: Self.fullScreen(focused))
         guard cleanSpace.isOn else { return }
 
         let tiles = tiler.chromeTiles().filter { cleanSpace.screens.contains($0.screen) }
@@ -134,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindowController.shared.onLayoutSettingsChanged = { [weak self] in self?.tiler.relayout() }
         SettingsWindowController.shared.onRearrange = { [weak self] in self?.tiler.rearrange() }
         SettingsWindowController.shared.onForgetSizes = { [weak self] in self?.tiler.forgetLearnedSizes() }
+        SettingsWindowController.shared.onScreenTiling = { [weak self] display, on in self?.tiler.setTiles(on, display: display) }
         SettingsWindowController.shared.onShowWelcome = { [weak self] in self?.showWelcome(firstRun: false) }
         SettingsWindowController.shared.onSettingsChanged = { [weak self] in
             self?.chrome.update()

@@ -32,6 +32,22 @@ final class Settings {
         set { defaults.set(newValue, forKey: "gap") }
     }
 
+    /// Screens Jharokha leaves alone, by display UUID. macOS derives that UUID from the
+    /// monitor itself, so the choice survives restarts, unplugging and changing ports.
+    var untiledDisplayUUIDs: Set<String> {
+        get { Set(defaults.stringArray(forKey: "untiledDisplays") ?? []) }
+        set { defaults.set(Array(newValue).sorted(), forKey: "untiledDisplays") }
+    }
+
+    /// Whether windows on this screen are tiled automatically (every screen is, until turned off).
+    func tiles(_ display: Display) -> Bool { !untiledDisplayUUIDs.contains(display.uuid) }
+
+    func setTiles(_ on: Bool, displayUUID uuid: String) {
+        var untiled = untiledDisplayUUIDs
+        if on { untiled.remove(uuid) } else { untiled.insert(uuid) }
+        untiledDisplayUUIDs = untiled
+    }
+
     /// Apps pinned to every desktop: never tiled, and following you between screens.
     var pinnedBundleIDs: Set<String> {
         get { Set(defaults.stringArray(forKey: "pinnedBundleIDs") ?? []) }

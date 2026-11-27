@@ -292,6 +292,11 @@ final class TilingManager {
                         tiles.append(.init(rect: rect, role: .normal, icon: appIcon(of: showing), caption: nil))
                     }
                 }
+            } else if !settings.tiles(display) {
+                if mouseDisplay?.key == display.key {
+                    tiles.append(.init(rect: display.rect.insetBy(dx: settings.gap, dy: settings.gap), role: .target,
+                                       icon: draggedIcon, caption: "Leave \(draggedName) here · this screen isn't tiled"))
+                }
             } else {
                 let hasRoom = state.tiles.count < settings.capacity(for: display)
                 let isTarget = mouseDisplay?.key == display.key
@@ -379,15 +384,22 @@ final class TilingManager {
         var groups: [String: [CGWindowID]] = [:]
         for window in found where !floating.contains(window.id) {
             guard let frame = window.frame,
-                  let display = displays.containing(CGPoint(x: frame.midX, y: frame.midY)) else { continue }
+                  let display = displays.containing(CGPoint(x: frame.midX, y: frame.midY)),
+                  settings.tiles(display) else { continue }
             groups[display.key, default: []].append(window.id)
         }
 
-        for (key, ids) in transient { groups[key, default: []].append(contentsOf: ids) }
+        let untiled = Set(displays.filter { !settings.tiles($0) }.map(\.key))
+        for (key, ids) in transient where !untiled.contains(key) { groups[key, default: []].append(contentsOf: ids) }
 
         // Windows some screen already had: a lone window among them moved here, it didn't open.
         let known = Set(lastMembers.values.joined())
         for display in displays {
+            // A screen set not to tile keeps no layout: its windows stay wherever they are.
+            guard settings.tiles(display) else {
+                forgetLayout(of: display.key)
+                continue
+            }
             var state = states[display.key] ?? ScreenTiles()
             let present = (groups[display.key] ?? []).sorted { firstSeen[$0, default: 0] < firstSeen[$1, default: 0] }
             let active = lastFocused.flatMap { state.tileIndex(of: $0) }
@@ -425,6 +437,28 @@ final class TilingManager {
         apply(displays, excluding: Set(transient.values.joined()))
         followWithPinnedWindows()
         onStateChange?()
+    }
+
+    /// Drops a screen's tiles and modes (it was set not to tile); its windows aren't moved.
+    private func forgetLayout(of key: String) {
+        states[key]?.allWindows.forEach { targets[$0] = nil }
+        states[key] = nil
+        appliedRects[key] = nil
+        focusMode[key] = nil
+        leftAlone.remove(key)
+        lastMembers[key] = nil
+        arrangedMembers[key] = nil
+        solvedCapacity[key] = nil
+        crowded.remove(key)
+    }
+
+    /// Turns automatic tiling on or off for one screen; remembered for that monitor.
+    func setTiles(_ on: Bool, display: Display) {
+        settings.setTiles(on, displayUUID: display.uuid)
+        if on { arrangedMembers[display.key] = nil }
+        refresh()
+        onStateChange?()
+        Toast.show(on ? "Tiling \(display.screen.localizedName)" : "\(display.screen.localizedName) isn't tiled now · its windows stay where you put them")
     }
 
     /// A window that opens alone on a screen is left as it is; one left over when the others
@@ -823,6 +857,11 @@ final class TilingManager {
                 if let destination = displays.containing(mouse), destination.key != display.key {
                     state.remove(id, capacity: settings.capacity(for: display))
                     states[display.key] = state
+                    // A screen that isn't tiled keeps the window where it was dropped.
+                    guard settings.tiles(destination) else {
+                        targets[id] = nil
+                        break
+                    }
                     var other = states[destination.key] ?? ScreenTiles()
                     let rects = lookupRects(for: destination)
                     other.insert(id, capacity: settings.capacity(for: destination),
@@ -899,6 +938,20 @@ final class TilingManager {
         } else if let other = c.displays.neighbor(of: c.display, direction: direction) {
             state.remove(c.window, capacity: settings.capacity(for: c.display))
             states[c.display.key] = state
+            // A screen that isn't tiled gets the window centred, at most 70% of its size.
+            guard settings.tiles(other) else {
+                if let window = windows[c.window] {
+                    let area = other.rect
+                    let size = CGSize(width: min(window.frame?.width ?? area.width, area.width * 0.7),
+                                      height: min(window.frame?.height ?? area.height, area.height * 0.7))
+                    window.setFrame(CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
+                                           width: size.width, height: size.height).integral)
+                    targets[c.window] = nil
+                }
+                apply(c.displays)
+                windows[c.window]?.focus()
+                return
+            }
             var destination = states[other.key] ?? ScreenTiles()
             destination.insert(c.window, capacity: settings.capacity(for: other), activeTile: nil)
             states[other.key] = destination

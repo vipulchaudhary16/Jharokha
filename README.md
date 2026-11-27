@@ -45,6 +45,8 @@ This needs only the Command Line Tools, not Xcode. Builds are signed with the "P
 
 **Apps that float:** turn off "Include ‹App› in Tiling" in the menu, press ⌃⌥⇧F, or use Float App in the quick actions, and that app's windows (a video player, say) open floating. You can still tile any one of them with Tile. File pickers, save panels and other dialogs always float.
 
+**Screens that don't tile:** with more than one screen, turn off Tile This Screen in the menu (or Settings › General › Screens) and that screen's windows stay where you put them. The choice is remembered per monitor.
+
 **One window:** a window that opens alone on a screen stays where macOS puts it; tiling starts with the second. When others close, the last window left takes the whole screen.
 
 ## Credits

@@ -11,6 +11,8 @@ final class SettingsWindowController {
     /// Smart placement was switched on: re-arrange now.
     var onRearrange: (() -> Void)?
     var onForgetSizes: (() -> Void)?
+    /// A screen was turned on or off for tiling.
+    var onScreenTiling: ((Display, Bool) -> Void)?
     var onShowWelcome: (() -> Void)?
     /// Re-registers shortcuts after an edit; set by the app delegate.
     var onShortcutsChanged: (() -> Void)?
@@ -99,6 +101,7 @@ private struct GeneralSettings: View {
                     Button("Forget") { controller.onForgetSizes?() }
                 }
             }
+            ScreenSettings()
             Section("Highlight") {
                 Picker("Style", selection: $highlight) {
                     ForEach(Settings.HighlightStyle.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -160,6 +163,7 @@ private struct GeneralSettings: View {
                 Text("Off: the shared window keeps its place, and the others show as cards with their app's icon and name — never their content.")
                     .font(.callout).foregroundStyle(.secondary)
             }
+            BlackOutSettings()
             Section {
                 HStack(spacing: 14) {
                     Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 52, height: 52)
@@ -177,6 +181,77 @@ private struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Which connected screens tile automatically. Each monitor's choice is remembered.
+private struct ScreenSettings: View {
+    private let settings = Settings.shared
+    @State private var displays = Display.current()
+    @State private var untiled = Settings.shared.untiledDisplayUUIDs
+
+    var body: some View {
+        Section("Screens") {
+            ForEach(displays, id: \.uuid) { display in
+                Toggle(isOn: Binding(
+                    get: { !untiled.contains(display.uuid) },
+                    set: { on in
+                        SettingsWindowController.shared.onScreenTiling?(display, on)
+                        untiled = settings.untiledDisplayUUIDs
+                    })) {
+                    Text(display.screen.localizedName)
+                    Text(display.screen == NSScreen.main ? "Tile windows automatically · main screen" : "Tile windows automatically")
+                }
+            }
+            Text("A screen that's off is left alone: its windows stay where you put them. Jharokha remembers each monitor, even after you unplug it.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            displays = Display.current()
+            untiled = settings.untiledDisplayUUIDs
+        }
+    }
+}
+
+/// How Black Out is lifted: Esc three times, or a password typed blind and Return.
+private struct BlackOutSettings: View {
+    @State private var hasPassword = BlackOutPassword.current != nil
+    @State private var editing = false
+    @State private var first = ""
+    @State private var second = ""
+
+    var body: some View {
+        Section("Black Out") {
+            LabeledContent("Return with") {
+                Text(hasPassword ? "Your password, then ↩" : "⎋ three times")
+            }
+            if editing {
+                SecureField("New password", text: $first)
+                SecureField("Type it again", text: $second)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { editing = false; first = ""; second = "" }
+                    Button("Save") {
+                        BlackOutPassword.set(first)
+                        hasPassword = BlackOutPassword.current != nil
+                        editing = false; first = ""; second = ""
+                    }
+                    .disabled(first.isEmpty || first != second)
+                    .keyboardShortcut(.defaultAction)
+                }
+            } else {
+                LabeledContent("Password") {
+                    HStack {
+                        Button(hasPassword ? "Change…" : "Set Password…") { editing = true }
+                        if hasPassword {
+                            Button("Remove") { BlackOutPassword.set(nil); hasPassword = false }
+                        }
+                    }
+                }
+            }
+            Text("Black Out makes every screen black so the Mac looks locked, while it stays awake and your apps keep working. Nothing you type shows. The lock key or ⌃⌘Q locks the Mac for real.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
     }
 }
 

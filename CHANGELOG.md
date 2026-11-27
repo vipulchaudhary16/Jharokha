@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 Each release's notes on GitHub are taken from its section here, so add one before tagging.
 
+## [1.2.0] — 2026-11-27
+
+### Added
+- **Choose which screens tile.** With more than one screen, Tile This Screen in the menu (or Settings › General › Screens) turns automatic tiling off for a screen: its windows stay where you put them. Jharokha remembers each monitor, even after you unplug it.
+- **Black Out**, in the menu: every screen goes black so the Mac looks locked, while it stays awake and apps keep running. Press ⎋ three times to come back, or set a password in Settings › General › Black Out. The lock key or ⌃⌘Q locks the Mac for real.
+
+### Fixed
+- No Peek no longer covers a full-screen app. Its screen is left clear, and No Peek catches up when you swipe to or from a full-screen app.
+
 ## [1.1.0] — 2026-11-02
 
 ### Added

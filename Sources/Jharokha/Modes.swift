@@ -14,7 +14,9 @@ final class NoPeek {
     }
 
     /// Re-applies the dim amount and blur, and re-orders below the newly active window.
-    func update(below window: CGWindowID?) {
+    /// A full-screen window has its own desktop with nothing to hide, so its screen is left
+    /// clear; otherwise the layer, which joins every desktop, would cover the whole app.
+    func update(below window: CGWindowID?, fullScreenOn fullScreen: NSScreen? = nil) {
         guard isOn else { return }
         let screens = Set(NSScreen.screens)
         for (screen, entry) in panels where !screens.contains(screen) {
@@ -24,6 +26,10 @@ final class NoPeek {
         for screen in NSScreen.screens {
             let entry = panels[screen] ?? makePanel()
             panels[screen] = entry
+            if screen == fullScreen {
+                entry.panel.orderOut(nil)
+                continue
+            }
             entry.panel.setFrame(screen.frame, display: false)
             entry.blur.isHidden = !settings.noPeekBlur
             entry.dim.layer?.backgroundColor = NSColor.black.withAlphaComponent(settings.noPeekDim).cgColor
